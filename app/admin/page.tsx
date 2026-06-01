@@ -38,7 +38,7 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    if (sessionStorage.getItem("admin_auth") === "true") setIsAuthenticated(true);
+    if (sessionStorage.getItem("admin_auth_token")) setIsAuthenticated(true);
   }, []);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -50,7 +50,7 @@ export default function AdminPage() {
     })
       .then((r) => r.json())
       .then(({ ok }) => {
-        if (ok) { sessionStorage.setItem("admin_auth", "true"); setIsAuthenticated(true); setLoginError(false); }
+        if (ok) { sessionStorage.setItem("admin_auth_token", password); setIsAuthenticated(true); setLoginError(false); }
         else setLoginError(true);
       })
       .catch(() => setLoginError(true));
@@ -95,7 +95,7 @@ export default function AdminPage() {
     setIsConfirming(true);
     const res = await fetch("/api/bezahlen", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-admin-token": sessionStorage.getItem("admin_auth_token") ?? "" },
       body: JSON.stringify({ id }),
     });
     const json = await res.json();
@@ -107,7 +107,7 @@ export default function AdminPage() {
   const handleManualBezahlen = async (id: string) => {
     const res = await fetch("/api/bezahlen", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-admin-token": sessionStorage.getItem("admin_auth_token") ?? "" },
       body: JSON.stringify({ id }),
     });
     const json = await res.json();
@@ -195,7 +195,7 @@ export default function AdminPage() {
             <p className="text-cream-muted text-xs font-sans mt-0.5">Cabisino 2026 · Ticketkasse</p>
           </div>
           <button
-            onClick={() => { sessionStorage.removeItem("admin_auth"); setIsAuthenticated(false); }}
+            onClick={() => { sessionStorage.removeItem("admin_auth_token"); setIsAuthenticated(false); }}
             className="text-cream-muted text-xs font-sans hover:text-cream border border-gold/20 hover:border-gold/40 px-3 py-1.5 rounded-lg transition-all"
           >
             Ausloggen

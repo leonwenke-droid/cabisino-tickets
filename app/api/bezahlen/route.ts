@@ -2,8 +2,14 @@ import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
-  const { id } = await req.json();
+  // Auth check
+  const token = req.headers.get("x-admin-token");
+  const adminPassword = process.env.ADMIN_PASSWORD;
+  if (!token || !adminPassword || token !== adminPassword) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
+  const { id } = await req.json();
   if (!id) {
     return NextResponse.json({ error: "ID fehlt" }, { status: 400 });
   }
