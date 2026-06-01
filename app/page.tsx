@@ -123,7 +123,7 @@ export default function RegistrationPage() {
     const { toPng } = await import("html-to-image");
     const dataUrl = await toPng(ticketRef.current, { pixelRatio: 3, cacheBust: true });
     const link = document.createElement("a");
-    link.download = `kabisino-ticket-${confirmedEntry.vorname}-${confirmedEntry.nachname}.png`;
+    link.download = `cabisino-ticket-${confirmedEntry.vorname}-${confirmedEntry.nachname}.png`;
     link.href = dataUrl;
     link.click();
   }, [confirmedEntry]);
@@ -161,7 +161,7 @@ export default function RegistrationPage() {
                   letterSpacing: "-0.01em",
                 }}
               >
-                Kabisino
+                Cabisino
               </h1>
               <p className="text-cream-muted font-sans text-sm tracking-wide">
                 13 Jahre Pokern für den Jackpot
@@ -401,7 +401,7 @@ function CasinoTicket({ entry, ticketRef }: { entry: Entry; ticketRef?: React.Re
       {/* Header */}
       <div className="text-center mb-5">
         <p className="font-serif text-gold text-xs tracking-[0.25em] uppercase mb-1">
-          Kabisino 2026
+          Cabisino 2026
         </p>
         <div className="w-16 h-px mx-auto"
           style={{ background: "linear-gradient(90deg,transparent,#C9A227,transparent)" }} />

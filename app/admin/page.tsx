@@ -192,7 +192,7 @@ export default function AdminPage() {
               <h1 className="font-serif text-xl text-cream">Dealer&apos;s Table</h1>
               <span className="text-gold text-base">♣</span>
             </div>
-            <p className="text-cream-muted text-xs font-sans mt-0.5">Kabisino 2026 · Ticketkasse</p>
+            <p className="text-cream-muted text-xs font-sans mt-0.5">Cabisino 2026 · Ticketkasse</p>
           </div>
           <button
             onClick={() => { sessionStorage.removeItem("admin_auth"); setIsAuthenticated(false); }}

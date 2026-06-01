@@ -1,5 +1,5 @@
 /**
- * Whitelist of valid registrants for Kabisino 2026.
+ * Whitelist of valid registrants for Cabisino 2026.
  * Each entry is "Vorname Nachname" — matching is case-insensitive and trimmed.
  * Replace or extend this list as needed.
  */
