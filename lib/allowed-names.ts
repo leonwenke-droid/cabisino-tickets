@@ -37,7 +37,7 @@ export const ALLOWED_NAMES: string[] = [
   "Jara Lünemann",
   "Jenola Feith",
   "Jerrick Hinrichs",
-  "Joris Thelle",
+  "Theile",
   "Jule Schilling",
   "Jule Vogt",
   "Julia van der Zijl",
@@ -83,6 +83,6 @@ export const ALLOWED_NAMES: string[] = [
  * Comparison is case-insensitive and trims whitespace.
  */
 export function isAllowed(vorname: string, nachname: string): boolean {
-  const full = `${vorname.trim()} ${nachname.trim()}`.toLowerCase();
+  const full = `${vorname.trim()} ${nachname.trim()}`.trim().toLowerCase();
   return ALLOWED_NAMES.some((n) => n.toLowerCase() === full);
 }

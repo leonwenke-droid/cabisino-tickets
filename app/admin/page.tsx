@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import dynamic from "next/dynamic";
 import { supabase, type Entry } from "@/lib/supabase";
 import { Footer } from "@/components/footer";
+import { EntryTicketDownload, EntryTicketDownloadFull } from "@/components/entry-ticket-download";
 
 const QrScanner = dynamic(() => import("@/components/qr-scanner"), {
   ssr: false,
@@ -259,6 +260,7 @@ export default function AdminPage() {
                     >
                       {isConfirming ? "Wird bestätigt…" : `✓ Bezahlung bestätigen · ${scanResult.entry.total_price} €`}
                     </button>
+                    <EntryTicketDownloadFull entry={scanResult.entry} />
                   </div>
                 )}
 
@@ -283,6 +285,7 @@ export default function AdminPage() {
                         Bezahlt um {new Date(scanResult.entry.bezahlt_at).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr
                       </p>
                     )}
+                    <EntryTicketDownloadFull entry={scanResult.entry} />
                   </div>
                 )}
 
@@ -391,15 +394,18 @@ export default function AdminPage() {
                         </p>
                       )}
                     </div>
-                    {!entry.bezahlt && (
-                      <button
-                        onClick={() => handleManualBezahlen(entry.id)}
-                        className="flex-shrink-0 px-3 py-1.5 rounded-lg gold-gradient text-[#0a0a0f] text-xs font-sans font-bold hover:opacity-90 active:scale-95 transition-all"
-                        style={{ boxShadow: "0 2px 10px rgba(201,162,39,0.2)" }}
-                      >
-                        Bezahlt
-                      </button>
-                    )}
+                    <div className="flex flex-shrink-0 flex-col gap-1.5">
+                      <EntryTicketDownload entry={entry} />
+                      {!entry.bezahlt && (
+                        <button
+                          onClick={() => handleManualBezahlen(entry.id)}
+                          className="px-3 py-1.5 rounded-lg gold-gradient text-[#0a0a0f] text-xs font-sans font-bold hover:opacity-90 active:scale-95 transition-all"
+                          style={{ boxShadow: "0 2px 10px rgba(201,162,39,0.2)" }}
+                        >
+                          Bezahlt
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
