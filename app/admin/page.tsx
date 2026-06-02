@@ -421,25 +421,29 @@ export default function AdminPage() {
                         </p>
                       )}
                     </div>
-                    <div className="flex flex-shrink-0 flex-col gap-1.5">
+                    {!entry.bezahlt && (
                       <button
-                        type="button"
-                        onClick={() => setEditingEntry(entry)}
-                        className="px-3 py-1.5 rounded-lg border border-gold/25 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
+                        onClick={() => handleManualBezahlen(entry.id)}
+                        className="flex-shrink-0 px-3 py-1.5 rounded-lg gold-gradient text-[#0a0a0f] text-xs font-sans font-bold hover:opacity-90 active:scale-95 transition-all"
+                        style={{ boxShadow: "0 2px 10px rgba(201,162,39,0.2)" }}
                       >
-                        ✎
+                        Bezahlt
                       </button>
-                      <EntryTicketDownload entry={entry} />
-                      {!entry.bezahlt && (
-                        <button
-                          onClick={() => handleManualBezahlen(entry.id)}
-                          className="px-3 py-1.5 rounded-lg gold-gradient text-[#0a0a0f] text-xs font-sans font-bold hover:opacity-90 active:scale-95 transition-all"
-                          style={{ boxShadow: "0 2px 10px rgba(201,162,39,0.2)" }}
-                        >
-                          Bezahlt
-                        </button>
-                      )}
-                    </div>
+                    )}
+                  </div>
+
+                  <div
+                    className="flex gap-2 mt-3 pt-3"
+                    style={{ borderTop: "1px solid rgba(201,162,39,0.15)" }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setEditingEntry(entry)}
+                      className="flex-1 py-2 rounded-lg border border-gold/25 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
+                    >
+                      ✎ Bearbeiten
+                    </button>
+                    <EntryTicketDownload entry={entry} className="flex-1" />
                   </div>
                 </div>
               ))}

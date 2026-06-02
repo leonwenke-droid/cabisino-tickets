@@ -4,7 +4,13 @@ import { useRef, useState, useCallback } from "react";
 import type { Entry } from "@/lib/supabase";
 import { CasinoTicket, downloadCasinoTicket } from "@/components/casino-ticket";
 
-export function EntryTicketDownload({ entry }: { entry: Entry }) {
+export function EntryTicketDownload({
+  entry,
+  className = "",
+}: {
+  entry: Entry;
+  className?: string;
+}) {
   const ticketRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
 
@@ -27,9 +33,9 @@ export function EntryTicketDownload({ entry }: { entry: Entry }) {
         type="button"
         onClick={handleDownload}
         disabled={downloading}
-        className="flex-shrink-0 px-3 py-1.5 rounded-lg border border-gold/30 text-gold text-xs font-sans font-medium hover:border-gold/50 hover:bg-gold/5 transition-all disabled:opacity-50"
+        className={`px-3 py-2 rounded-lg border border-gold/30 text-gold text-xs font-sans font-medium hover:border-gold/50 hover:bg-gold/5 transition-all disabled:opacity-50 ${className}`}
       >
-        {downloading ? "…" : "↓ QR"}
+        {downloading ? "…" : "↓ QR-Code"}
       </button>
     </>
   );
