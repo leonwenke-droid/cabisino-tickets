@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { supabase, type Entry } from "@/lib/supabase";
 import { Footer } from "@/components/footer";
 import { EntryTicketDownload, EntryTicketDownloadFull } from "@/components/entry-ticket-download";
+import { EntryEditModal } from "@/components/entry-edit-modal";
 
 const QrScanner = dynamic(() => import("@/components/qr-scanner"), {
   ssr: false,
@@ -37,6 +38,7 @@ export default function AdminPage() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [editingEntry, setEditingEntry] = useState<Entry | null>(null);
 
   useEffect(() => {
     if (sessionStorage.getItem("admin_auth_token")) setIsAuthenticated(true);
@@ -121,6 +123,17 @@ export default function AdminPage() {
     setScanResult(null);
     lastScannedRef.current = null;
     setScannerActive(true);
+  };
+
+  const handleEntrySaved = (updated: Entry) => {
+    setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    setScanResult((prev) => {
+      if (!prev || prev.type === "not_found" || prev.type === "error") return prev;
+      if (prev.entry.id !== updated.id) return prev;
+      return prev.type === "already_paid"
+        ? { type: "already_paid", entry: updated }
+        : { type: "found", entry: updated };
+    });
   };
 
   const filtered = entries.filter((e) => {
@@ -261,6 +274,13 @@ export default function AdminPage() {
                       {isConfirming ? "Wird bestätigt…" : `✓ Bezahlung bestätigen · ${scanResult.entry.total_price} €`}
                     </button>
                     <EntryTicketDownloadFull entry={scanResult.entry} />
+                    <button
+                      type="button"
+                      onClick={() => setEditingEntry(scanResult.entry)}
+                      className="w-full mt-2 py-2.5 rounded-xl border border-gold/25 text-gold text-sm font-sans hover:border-gold/50 hover:bg-gold/5 transition-all"
+                    >
+                      ✎ Bearbeiten
+                    </button>
                   </div>
                 )}
 
@@ -286,6 +306,13 @@ export default function AdminPage() {
                       </p>
                     )}
                     <EntryTicketDownloadFull entry={scanResult.entry} />
+                    <button
+                      type="button"
+                      onClick={() => setEditingEntry(scanResult.entry)}
+                      className="w-full mt-2 py-2.5 rounded-xl border border-gold/25 text-gold text-sm font-sans hover:border-gold/50 hover:bg-gold/5 transition-all"
+                    >
+                      ✎ Bearbeiten
+                    </button>
                   </div>
                 )}
 
@@ -395,6 +422,13 @@ export default function AdminPage() {
                       )}
                     </div>
                     <div className="flex flex-shrink-0 flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingEntry(entry)}
+                        className="px-3 py-1.5 rounded-lg border border-gold/25 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
+                      >
+                        ✎
+                      </button>
                       <EntryTicketDownload entry={entry} />
                       {!entry.bezahlt && (
                         <button
@@ -419,6 +453,14 @@ export default function AdminPage() {
         )}
       </main>
       <Footer />
+
+      {editingEntry && (
+        <EntryEditModal
+          entry={editingEntry}
+          onClose={() => setEditingEntry(null)}
+          onSaved={handleEntrySaved}
+        />
+      )}
     </div>
   );
 }

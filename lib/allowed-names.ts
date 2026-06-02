@@ -37,7 +37,7 @@ export const ALLOWED_NAMES: string[] = [
   "Jara Lünemann",
   "Jenola Feith",
   "Jerrick Hinrichs",
-  "Theile",
+  "Joris Theile",
   "Jule Schilling",
   "Jule Vogt",
   "Julia van der Zijl",
