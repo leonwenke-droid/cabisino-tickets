@@ -3,6 +3,12 @@
 import { useState, useCallback, useRef } from "react";
 import { supabase, type Entry } from "@/lib/supabase";
 import { isAllowed } from "@/lib/allowed-names";
+import {
+  type GuestName,
+  resolveGuestNames,
+  formatGuestName,
+  hasEmptyGuestRows,
+} from "@/lib/guest-names";
 import { Footer } from "@/components/footer";
 import { CasinoTicket, downloadCasinoTicket } from "@/components/casino-ticket";
 
@@ -12,7 +18,7 @@ const SUITS = ["♠", "♥", "♦", "♣"];
 // Verkaufstermine — mark past ones as done
 const VERKAUFSTERMINE = [
   { date: "01.06.", done: true },
-  { date: "11.06.", done: false },
+  { date: "11.06.", done: true },
   { date: "15.06.", done: false },
   { date: "17.06.", done: false },
 ];
@@ -25,21 +31,67 @@ export default function RegistrationPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [emptyGuestsPrompt, setEmptyGuestsPrompt] = useState(false);
 
   const [vorname, setVorname] = useState("");
   const [nachname, setNachname] = useState("");
-  const [guests, setGuests] = useState<string[]>([]);
+  const [guests, setGuests] = useState<GuestName[]>([]);
   const [confirmedEntry, setConfirmedEntry] = useState<Entry | null>(null);
 
   const ticketRef = useRef<HTMLDivElement>(null);
+  const firstEmptyGuestRef = useRef<HTMLInputElement>(null);
 
-  const totalPersons = 1 + guests.length;
+  const completeGuests = guests.filter(
+    (g) => g.vorname.trim() && g.nachname.trim()
+  );
+  const totalPersons = 1 + completeGuests.length;
   const totalPrice = totalPersons * PRICE_PER_PERSON;
 
-  const addGuest = () => setGuests((g) => [...g, ""]);
-  const removeGuest = (i: number) => setGuests((g) => g.filter((_, idx) => idx !== i));
-  const updateGuest = (i: number, val: string) =>
-    setGuests((g) => g.map((g2, idx) => (idx === i ? val : g2)));
+  const addGuest = () => setGuests((g) => [...g, { vorname: "", nachname: "" }]);
+  const removeGuest = (i: number) => {
+    setEmptyGuestsPrompt(false);
+    setGuests((g) => g.filter((_, idx) => idx !== i));
+  };
+  const updateGuest = (i: number, field: keyof GuestName, val: string) => {
+    setEmptyGuestsPrompt(false);
+    setGuests((g) =>
+      g.map((g2, idx) => (idx === i ? { ...g2, [field]: val } : g2))
+    );
+  };
+
+  const submitRegistration = useCallback(
+    async (guestList: GuestName[]) => {
+      const { names: filteredGuests, error: guestError } = resolveGuestNames(guestList);
+      if (guestError) {
+        setSubmitError(guestError);
+        return;
+      }
+
+      setIsSubmitting(true);
+      try {
+        const { data, error: insertError } = await supabase
+          .from("entries")
+          .insert({
+            vorname: vorname.trim(),
+            nachname: nachname.trim(),
+            guests: filteredGuests.length > 0 ? filteredGuests : null,
+            total_persons: 1 + filteredGuests.length,
+            total_price: (1 + filteredGuests.length) * PRICE_PER_PERSON,
+          })
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        setConfirmedEntry(data as Entry);
+        setView("confirmation");
+      } catch {
+        setSubmitError("Ein Fehler ist aufgetreten. Bitte versuche es erneut.");
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [vorname, nachname]
+  );
 
   // Step 1: validate name
   const handleNameSubmit = useCallback(
@@ -89,34 +141,33 @@ export default function RegistrationPage() {
     async (e: React.FormEvent) => {
       e.preventDefault();
       setSubmitError(null);
-      setIsSubmitting(true);
+      setEmptyGuestsPrompt(false);
 
-      const filteredGuests = guests.map((g) => g.trim()).filter(Boolean);
-
-      try {
-        const { data, error: insertError } = await supabase
-          .from("entries")
-          .insert({
-            vorname: vorname.trim(),
-            nachname: nachname.trim(),
-            guests: filteredGuests.length > 0 ? filteredGuests : null,
-            total_persons: totalPersons,
-            total_price: totalPrice,
-          })
-          .select()
-          .single();
-
-        if (insertError) throw insertError;
-        setConfirmedEntry(data as Entry);
-        setView("confirmation");
-      } catch {
-        setSubmitError("Ein Fehler ist aufgetreten. Bitte versuche es erneut.");
-      } finally {
-        setIsSubmitting(false);
+      const { error: guestError } = resolveGuestNames(guests);
+      if (guestError) {
+        setSubmitError(guestError);
+        return;
       }
+
+      if (hasEmptyGuestRows(guests)) {
+        setEmptyGuestsPrompt(true);
+        requestAnimationFrame(() => firstEmptyGuestRef.current?.focus());
+        return;
+      }
+
+      await submitRegistration(guests);
     },
-    [vorname, nachname, guests, totalPersons, totalPrice]
+    [guests, submitRegistration]
   );
+
+  const handleConfirmWithoutGuests = useCallback(async () => {
+    setEmptyGuestsPrompt(false);
+    const filledGuests = guests.filter(
+      (g) => g.vorname.trim() || g.nachname.trim()
+    );
+    setGuests(filledGuests);
+    await submitRegistration(filledGuests);
+  }, [guests, submitRegistration]);
 
   const handleDownload = useCallback(async () => {
     if (!ticketRef.current || !confirmedEntry) return;
@@ -262,24 +313,55 @@ export default function RegistrationPage() {
                   <label className="block text-cream-muted text-xs font-sans tracking-wide uppercase">
                     Begleitpersonen
                   </label>
-                  {guests.map((guest, i) => (
-                    <div key={i} className="flex gap-2 animate-fade-in">
-                      <input
-                        type="text"
-                        value={guest}
-                        onChange={(e) => updateGuest(i, e.target.value)}
-                        placeholder={`Begleitperson ${i + 1}`}
-                        className="input-dark flex-1 rounded-lg px-3 py-2.5 text-sm font-sans outline-none transition-all"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeGuest(i)}
-                        className="w-9 h-10 flex-shrink-0 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all text-base flex items-center justify-center"
-                      >
-                        ×
-                      </button>
+                  {guests.map((guest, i) => {
+                    const isFirstEmpty =
+                      emptyGuestsPrompt &&
+                      !guest.vorname.trim() &&
+                      !guest.nachname.trim() &&
+                      guests.findIndex(
+                        (g) => !g.vorname.trim() && !g.nachname.trim()
+                      ) === i;
+
+                    return (
+                    <div key={i} className="space-y-2 animate-fade-in">
+                      <p className="text-cream-muted/70 text-xs font-sans">
+                        Begleitperson {i + 1}
+                      </p>
+                      <div className="flex gap-2">
+                        <div className="grid grid-cols-2 gap-2 flex-1">
+                          <input
+                            ref={isFirstEmpty ? firstEmptyGuestRef : undefined}
+                            type="text"
+                            value={guest.vorname}
+                            onChange={(e) => updateGuest(i, "vorname", e.target.value)}
+                            placeholder="Vorname"
+                            className={`input-dark w-full rounded-lg px-3 py-2.5 text-sm font-sans outline-none transition-all ${
+                              isFirstEmpty ? "ring-2 ring-gold/40" : ""
+                            }`}
+                            autoCapitalize="words"
+                          />
+                          <input
+                            type="text"
+                            value={guest.nachname}
+                            onChange={(e) => updateGuest(i, "nachname", e.target.value)}
+                            placeholder="Nachname"
+                            className={`input-dark w-full rounded-lg px-3 py-2.5 text-sm font-sans outline-none transition-all ${
+                              isFirstEmpty ? "ring-2 ring-gold/40" : ""
+                            }`}
+                            autoCapitalize="words"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeGuest(i)}
+                          className="w-9 h-10 flex-shrink-0 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all text-base flex items-center justify-center self-end"
+                        >
+                          ×
+                        </button>
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                   <button
                     type="button"
                     onClick={addGuest}
@@ -295,9 +377,9 @@ export default function RegistrationPage() {
                     <span className="text-cream-muted">{vorname}</span>
                     <span className="text-cream">{PRICE_PER_PERSON} €</span>
                   </div>
-                  {guests.map((g, i) => (
+                  {completeGuests.map((g, i) => (
                     <div key={i} className="flex justify-between text-sm font-sans">
-                      <span className="text-cream-muted">{g.trim() || `Begleitperson ${i + 1}`}</span>
+                      <span className="text-cream-muted">{formatGuestName(g)}</span>
                       <span className="text-cream">{PRICE_PER_PERSON} €</span>
                     </div>
                   ))}
@@ -308,6 +390,36 @@ export default function RegistrationPage() {
                     <span className="font-serif text-2xl text-gold font-semibold">{totalPrice} €</span>
                   </div>
                 </div>
+
+                {emptyGuestsPrompt && (
+                  <div className="rounded-lg border border-gold/35 bg-gold/10 px-4 py-3 space-y-3">
+                    <p className="text-cream text-sm font-sans leading-relaxed">
+                      Du hast Begleitpersonen hinzugefügt, aber noch keine Namen
+                      eingetragen. Möchtest du die Namen noch eintragen oder ohne
+                      Begleitperson anmelden?
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEmptyGuestsPrompt(false);
+                          firstEmptyGuestRef.current?.focus();
+                        }}
+                        className="flex-1 py-2.5 rounded-lg gold-gradient text-[#0a0a0f] font-sans font-semibold text-sm hover:opacity-90 transition-all"
+                      >
+                        Namen eintragen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmWithoutGuests}
+                        disabled={isSubmitting}
+                        className="flex-1 py-2.5 rounded-lg border border-gold/30 text-gold font-sans text-sm hover:bg-gold/5 transition-all disabled:opacity-50"
+                      >
+                        Ohne Begleitperson anmelden
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {submitError && (
                   <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-red-400 text-sm font-sans">

@@ -15,4 +15,5 @@ export type Entry = {
   total_price: number;
   bezahlt: boolean;
   bezahlt_at: string | null;
+  sitzwunsch?: string | null;
 };

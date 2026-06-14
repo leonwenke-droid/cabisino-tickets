@@ -6,6 +6,7 @@ import { supabase, type Entry } from "@/lib/supabase";
 import { Footer } from "@/components/footer";
 import { EntryTicketDownload, EntryTicketDownloadFull } from "@/components/entry-ticket-download";
 import { EntryEditModal } from "@/components/entry-edit-modal";
+import { TischeTab } from "@/components/tische-tab";
 
 const QrScanner = dynamic(() => import("@/components/qr-scanner"), {
   ssr: false,
@@ -27,7 +28,7 @@ export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState(false);
-  const [activeTab, setActiveTab] = useState<"scanner" | "liste">("scanner");
+  const [activeTab, setActiveTab] = useState<"scanner" | "liste" | "tische">("scanner");
 
   const [scanResult, setScanResult] = useState<ScanResult>(null);
   const [isFetching, setIsFetching] = useState(false);
@@ -67,7 +68,7 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (isAuthenticated && activeTab === "liste") fetchEntries();
+    if (isAuthenticated && (activeTab === "liste" || activeTab === "tische")) fetchEntries();
   }, [isAuthenticated, activeTab, fetchEntries]);
 
   const handleScan = useCallback(async (uuid: string) => {
@@ -197,7 +198,9 @@ export default function AdminPage() {
           style={{ background: "radial-gradient(ellipse, rgba(201,162,39,0.05) 0%, transparent 70%)" }} />
       </div>
 
-      <main className="flex-1 flex flex-col px-4 py-6 relative z-10 max-w-lg mx-auto w-full">
+      <main className={`flex-1 flex flex-col px-4 py-6 relative z-10 mx-auto w-full ${
+        activeTab === "tische" ? "max-w-6xl" : "max-w-lg"
+      }`}>
         {/* Header */}
         <div className="flex items-center justify-between mb-5">
           <div>
@@ -218,17 +221,21 @@ export default function AdminPage() {
 
         {/* Tabs */}
         <div className="flex rounded-xl border border-gold/20 bg-surface-2 p-1 mb-5">
-          {(["scanner", "liste"] as const).map((tab) => (
+          {(["scanner", "liste", "tische"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2 rounded-lg text-sm font-sans font-medium transition-all duration-200 ${
+              className={`flex-1 py-2 rounded-lg text-xs sm:text-sm font-sans font-medium transition-all duration-200 ${
                 activeTab === tab
                   ? "gold-gradient text-[#0a0a0f] shadow"
                   : "text-cream-muted hover:text-cream"
               }`}
             >
-              {tab === "scanner" ? "♦ Scannen" : "♥ Übersicht"}
+              {tab === "scanner"
+                ? "♦ Scannen"
+                : tab === "liste"
+                  ? "♥ Übersicht"
+                  : "♣ Tische"}
             </button>
           ))}
         </div>
@@ -454,6 +461,11 @@ export default function AdminPage() {
               )}
             </div>
           </div>
+        )}
+
+        {/* ── TISCHE TAB ── */}
+        {activeTab === "tische" && (
+          <TischeTab entries={entries} isLoading={isLoadingList} />
         )}
       </main>
       <Footer />

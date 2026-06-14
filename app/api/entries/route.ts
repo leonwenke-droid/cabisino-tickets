@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { validateGuestStrings } from "@/lib/guest-names";
 
 const PRICE_PER_PERSON = 64;
 
@@ -29,6 +30,11 @@ export async function PATCH(req: NextRequest) {
   const filteredGuests: string[] = Array.isArray(guests)
     ? guests.map((g: string) => String(g).trim()).filter(Boolean)
     : [];
+
+  const guestError = validateGuestStrings(filteredGuests);
+  if (guestError) {
+    return NextResponse.json({ error: guestError }, { status: 400 });
+  }
 
   const totalPersons = 1 + filteredGuests.length;
   const totalPrice = totalPersons * PRICE_PER_PERSON;

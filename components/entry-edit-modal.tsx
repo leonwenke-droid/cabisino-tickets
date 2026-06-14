@@ -2,6 +2,12 @@
 
 import { useState, useCallback, useEffect } from "react";
 import type { Entry } from "@/lib/supabase";
+import {
+  type GuestName,
+  guestStringsToRows,
+  resolveGuestNames,
+  formatGuestName,
+} from "@/lib/guest-names";
 
 const PRICE_PER_PERSON = 64;
 
@@ -23,7 +29,9 @@ export function EntryEditModal({
 }) {
   const [vorname, setVorname] = useState(entry.vorname);
   const [nachname, setNachname] = useState(entry.nachname);
-  const [guests, setGuests] = useState<string[]>(entry.guests ?? []);
+  const [guests, setGuests] = useState<GuestName[]>(() =>
+    guestStringsToRows(entry.guests)
+  );
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -34,13 +42,18 @@ export function EntryEditModal({
     };
   }, []);
 
-  const totalPersons = 1 + guests.length;
+  const completeGuests = guests.filter(
+    (g) => g.vorname.trim() && g.nachname.trim()
+  );
+  const totalPersons = 1 + completeGuests.length;
   const totalPrice = totalPersons * PRICE_PER_PERSON;
 
-  const addGuest = () => setGuests((g) => [...g, ""]);
+  const addGuest = () => setGuests((g) => [...g, { vorname: "", nachname: "" }]);
   const removeGuest = (i: number) => setGuests((g) => g.filter((_, idx) => idx !== i));
-  const updateGuest = (i: number, val: string) =>
-    setGuests((g) => g.map((g2, idx) => (idx === i ? val : g2)));
+  const updateGuest = (i: number, field: keyof GuestName, val: string) =>
+    setGuests((g) =>
+      g.map((g2, idx) => (idx === i ? { ...g2, [field]: val } : g2))
+    );
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -49,6 +62,12 @@ export function EntryEditModal({
 
       if (!vorname.trim() || !nachname.trim()) {
         setError("Bitte Vor- und Nachname ausfüllen.");
+        return;
+      }
+
+      const { names: filteredGuests, error: guestError } = resolveGuestNames(guests);
+      if (guestError) {
+        setError(guestError);
         return;
       }
 
@@ -61,7 +80,7 @@ export function EntryEditModal({
             id: entry.id,
             vorname: vorname.trim(),
             nachname: nachname.trim(),
-            guests: guests.map((g) => g.trim()).filter(Boolean),
+            guests: filteredGuests,
           }),
         });
         const json = await res.json();
@@ -154,21 +173,37 @@ export function EntryEditModal({
                 Begleitpersonen
               </label>
               {guests.map((guest, i) => (
-                <div key={i} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={guest}
-                    onChange={(e) => updateGuest(i, e.target.value)}
-                    placeholder={`Begleitperson ${i + 1}`}
-                    className="input-dark flex-1 rounded-lg px-3 py-2.5 text-sm font-sans outline-none transition-all"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeGuest(i)}
-                    className="w-9 h-10 flex-shrink-0 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all text-base flex items-center justify-center"
-                  >
-                    ×
-                  </button>
+                <div key={i} className="space-y-2">
+                  <p className="text-cream-muted/70 text-xs font-sans">
+                    Begleitperson {i + 1}
+                  </p>
+                  <div className="flex gap-2">
+                    <div className="grid grid-cols-2 gap-2 flex-1">
+                      <input
+                        type="text"
+                        value={guest.vorname}
+                        onChange={(e) => updateGuest(i, "vorname", e.target.value)}
+                        placeholder="Vorname"
+                        className="input-dark w-full rounded-lg px-3 py-2.5 text-sm font-sans outline-none transition-all"
+                        autoCapitalize="words"
+                      />
+                      <input
+                        type="text"
+                        value={guest.nachname}
+                        onChange={(e) => updateGuest(i, "nachname", e.target.value)}
+                        placeholder="Nachname"
+                        className="input-dark w-full rounded-lg px-3 py-2.5 text-sm font-sans outline-none transition-all"
+                        autoCapitalize="words"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeGuest(i)}
+                      className="w-9 h-10 flex-shrink-0 rounded-lg border border-red-500/25 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all text-base flex items-center justify-center self-end"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
               ))}
               <button
@@ -185,9 +220,9 @@ export function EntryEditModal({
                 <span className="text-cream-muted">{vorname || "Hauptperson"}</span>
                 <span className="text-cream">{PRICE_PER_PERSON} €</span>
               </div>
-              {guests.map((g, i) => (
+              {completeGuests.map((g, i) => (
                 <div key={i} className="flex justify-between text-sm font-sans">
-                  <span className="text-cream-muted">{g.trim() || `Begleitperson ${i + 1}`}</span>
+                  <span className="text-cream-muted">{formatGuestName(g)}</span>
                   <span className="text-cream">{PRICE_PER_PERSON} €</span>
                 </div>
               ))}
