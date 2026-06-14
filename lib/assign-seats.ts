@@ -713,7 +713,6 @@ export function moveEntryToTable(
 
   if (!entry || targetTableIdx < 0 || targetTableIdx >= cloned.length) return null;
   if (sourceIdx === targetTableIdx) return cloned;
-  if (!canDropEntryOnTable(cloned[targetTableIdx], entry)) return null;
 
   cloned[targetTableIdx].entries.push(entry);
   recalcTableSeats(cloned[targetTableIdx]);
@@ -808,6 +807,10 @@ export function entryWishBroken(
   return mentioned.some((m) => !table.entries.some((e) => e.id === m.id));
 }
 
+export function isTableOverfull(table: AssignedTable): boolean {
+  return table.seatsUsed > SEATS_PER_TABLE;
+}
+
 export function exportSeatingPlan(
   result: AssignSeatsResult,
   manualEntryIds?: Set<string>
@@ -818,8 +821,9 @@ export function exportSeatingPlan(
 
   result.tables.forEach((table, i) => {
     const splitNote = table.groupSplit ? " [Gruppe aufgeteilt]" : "";
+    const overfullNote = isTableOverfull(table) ? " ⚠ ÜBERFÜLLT" : "";
     lines.push(
-      `Tisch ${i + 1} (${table.seatsUsed}/${SEATS_PER_TABLE} Plätze)${splitNote}:`
+      `Tisch ${i + 1} (${table.seatsUsed}/${SEATS_PER_TABLE} Plätze)${splitNote}${overfullNote}:`
     );
     for (const entry of table.entries) {
       const wish = entry.sitzwunsch?.trim();

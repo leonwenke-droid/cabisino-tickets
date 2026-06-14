@@ -10,7 +10,6 @@ import {
   useDraggable,
   useDroppable,
   type DragEndEvent,
-  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { Entry } from "@/lib/supabase";
@@ -28,15 +27,32 @@ import {
   moveEntryToTable,
   shuffleNeutralEntries,
   syncManualEntryIds,
-  canDropEntryOnTableExcluding,
-  findEntryTableIndex,
   entryWishBroken,
+  isTableOverfull,
   SEATS_PER_TABLE,
   type AssignSeatsResult,
   type TableSatisfaction,
   type EntryChipStatus,
   type AssignedTable,
 } from "@/lib/assign-seats";
+
+const TABLE_COUNT_STORAGE_KEY = "admin_tische_table_count";
+
+function readStoredTableCount(): { input: string; applied?: number } {
+  if (typeof window === "undefined") return { input: "" };
+  const stored = sessionStorage.getItem(TABLE_COUNT_STORAGE_KEY) ?? "";
+  const n = parseInt(stored.trim(), 10);
+  return {
+    input: stored,
+    applied: Number.isFinite(n) && n > 0 ? n : undefined,
+  };
+}
+
+function persistTableCount(value: string) {
+  if (typeof window === "undefined") return;
+  if (value.trim()) sessionStorage.setItem(TABLE_COUNT_STORAGE_KEY, value.trim());
+  else sessionStorage.removeItem(TABLE_COUNT_STORAGE_KEY);
+}
 
 const GLOW_BY_SATISFACTION: Record<TableSatisfaction, string> = {
   none: "",
@@ -168,7 +184,6 @@ function PokerTableCard({
   unfulfilledWishes,
   overCapacityIds,
   manualEntryIds,
-  isDropInvalid,
   isDropTarget,
 }: {
   index: number;
@@ -177,27 +192,22 @@ function PokerTableCard({
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"];
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
-  isDropInvalid?: boolean;
   isDropTarget?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `table-${index}` });
 
   const satisfaction = getTableSatisfaction(table, allEntries, unfulfilledWishes);
-  const overfull = satisfaction === "overfull";
+  const overfull = isTableOverfull(table);
   const seatGroups = buildSeatGroups(table);
-  const overflow = Math.max(0, table.seatsUsed - SEATS_PER_TABLE);
   const manualCount = table.entries.filter((e) => manualEntryIds.has(e.id)).length;
-
-  const showInvalid = isOver && isDropInvalid;
-  const showValid = isOver && isDropTarget && !isDropInvalid;
 
   return (
     <div
       ref={setNodeRef}
       className={`relative rounded-[2rem] border-2 p-1 transition-shadow ${
-        showInvalid
-          ? "border-red-500 shadow-[0_0_24px_rgba(239,68,68,0.5)]"
-          : showValid
+        overfull
+          ? "border-red-500 shadow-[0_0_32px_rgba(239,68,68,0.35)]"
+          : isOver && isDropTarget
             ? "border-gold shadow-[0_0_20px_rgba(201,162,39,0.35)]"
             : `border-gold/50 ${GLOW_BY_SATISFACTION[satisfaction]}`
       } ${table.groupSplit ? "ring-2 ring-yellow-500/40 ring-offset-1 ring-offset-surface" : ""}`}
@@ -223,7 +233,9 @@ function PokerTableCard({
                 : "border-gold/30 text-gold/90 bg-black/25"
             }`}
           >
-            {table.seatsUsed}/{SEATS_PER_TABLE}
+            {overfull
+              ? `Überfüllt · ${table.seatsUsed}/${SEATS_PER_TABLE}`
+              : `${table.seatsUsed}/${SEATS_PER_TABLE}`}
           </span>
           {manualCount > 0 && (
             <span className="text-[9px] font-sans text-gray-400">
@@ -262,12 +274,6 @@ function PokerTableCard({
             );
           })}
         </div>
-
-        {overflow > 0 && (
-          <p className="text-center text-[10px] text-red-400 font-sans mt-3">
-            +{overflow} über Kapazität
-          </p>
-        )}
       </div>
     </div>
   );
@@ -281,8 +287,12 @@ export function TischeTab({
   isLoading?: boolean;
 }) {
   const [recalcKey, setRecalcKey] = useState(0);
-  const [tableCountInput, setTableCountInput] = useState("");
-  const [appliedTableCount, setAppliedTableCount] = useState<number | undefined>();
+  const [tableCountInput, setTableCountInput] = useState(
+    () => readStoredTableCount().input
+  );
+  const [appliedTableCount, setAppliedTableCount] = useState<number | undefined>(
+    () => readStoredTableCount().applied
+  );
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [currentTables, setCurrentTables] = useState<AssignedTable[] | null>(null);
   const [manualEntryIds, setManualEntryIds] = useState<Set<string>>(new Set());
@@ -290,7 +300,6 @@ export function TischeTab({
     new Map()
   );
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
-  const [invalidDropTable, setInvalidDropTable] = useState<number | null>(null);
 
   const fixedTableCount = appliedTableCount;
 
@@ -336,9 +345,16 @@ export function TischeTab({
 
   const handleRecalculate = useCallback(() => {
     const n = parseInt(tableCountInput.trim(), 10);
-    setAppliedTableCount(Number.isFinite(n) && n > 0 ? n : undefined);
+    const applied = Number.isFinite(n) && n > 0 ? n : undefined;
+    setAppliedTableCount(applied);
+    persistTableCount(tableCountInput);
     setRecalcKey((k) => k + 1);
   }, [tableCountInput]);
+
+  const handleTableCountChange = useCallback((value: string) => {
+    setTableCountInput(value);
+    persistTableCount(value);
+  }, []);
 
   const handleResetManual = useCallback(() => {
     setCurrentTables(cloneTables(baseResult.tables));
@@ -366,38 +382,11 @@ export function TischeTab({
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
-    setInvalidDropTable(null);
   }, []);
-
-  const handleDragOver = useCallback(
-    (event: DragOverEvent) => {
-      const overId = event.over?.id;
-      const entryId = String(event.active.id);
-      const entry = entries.find((e) => e.id === entryId);
-      const tables = currentTables ?? baseResult.tables;
-
-      if (!overId || !entry || !String(overId).startsWith("table-")) {
-        setInvalidDropTable(null);
-        return;
-      }
-
-      const targetIdx = parseInt(String(overId).replace("table-", ""), 10);
-      const sourceIdx = findEntryTableIndex(tables, entryId);
-      const valid = canDropEntryOnTableExcluding(
-        tables,
-        targetIdx,
-        entry,
-        sourceIdx
-      );
-      setInvalidDropTable(valid ? null : targetIdx);
-    },
-    [entries, currentTables, baseResult.tables]
-  );
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDragId(null);
-      setInvalidDropTable(null);
 
       const entryId = String(event.active.id);
       const overId = event.over?.id;
@@ -405,15 +394,6 @@ export function TischeTab({
 
       const targetIdx = parseInt(String(overId).replace("table-", ""), 10);
       const tables = currentTables ?? baseResult.tables;
-      const entry = entries.find((e) => e.id === entryId);
-      if (!entry) return;
-
-      const sourceIdx = findEntryTableIndex(tables, entryId);
-      if (
-        !canDropEntryOnTableExcluding(tables, targetIdx, entry, sourceIdx)
-      ) {
-        return;
-      }
 
       const newTables = moveEntryToTable(tables, entryId, targetIdx);
       if (!newTables) return;
@@ -421,12 +401,11 @@ export function TischeTab({
       setCurrentTables(newTables);
       setManualEntryIds(syncManualEntryIds(newTables, baseAssignmentMap));
     },
-    [currentTables, baseResult.tables, entries, baseAssignmentMap]
+    [currentTables, baseResult.tables, baseAssignmentMap]
   );
 
   const handleDragCancel = useCallback(() => {
     setActiveDragId(null);
-    setInvalidDropTable(null);
   }, []);
 
   if (isLoading) {
@@ -451,6 +430,7 @@ export function TischeTab({
   }
 
   const tables = currentTables ?? displayResult.tables;
+  const overfullTableCount = tables.filter(isTableOverfull).length;
 
   return (
     <div className="space-y-5 animate-fade-in">
@@ -464,7 +444,7 @@ export function TischeTab({
             type="number"
             min={1}
             value={tableCountInput}
-            onChange={(e) => setTableCountInput(e.target.value)}
+            onChange={(e) => handleTableCountChange(e.target.value)}
             placeholder="Automatisch"
             className="input-dark w-full rounded-lg px-3 py-2 text-sm font-sans outline-none"
           />
@@ -504,7 +484,7 @@ export function TischeTab({
       </div>
 
       {/* Summary bar */}
-      <div className="felt-card rounded-2xl px-4 py-3 grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="felt-card rounded-2xl px-4 py-3 grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div className="text-center">
           <p className="font-serif text-xl text-gold">{tables.length}</p>
           <p className="text-cream-muted text-[10px] font-sans uppercase tracking-wide">
@@ -526,6 +506,14 @@ export function TischeTab({
           </p>
         </div>
         <div className="text-center">
+          <p className="font-serif text-xl text-red-400">
+            {overfullTableCount}
+          </p>
+          <p className="text-cream-muted text-[10px] font-sans uppercase tracking-wide">
+            Überfüllt
+          </p>
+        </div>
+        <div className="text-center col-span-2 sm:col-span-1">
           <p className="font-serif text-xl text-red-400">
             {displayResult.unfulfilledWishes.length}
           </p>
@@ -590,7 +578,6 @@ export function TischeTab({
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
@@ -604,7 +591,6 @@ export function TischeTab({
               unfulfilledWishes={displayResult.unfulfilledWishes}
               overCapacityIds={overCapacityIds}
               manualEntryIds={manualEntryIds}
-              isDropInvalid={invalidDropTable === i}
               isDropTarget={activeDragId !== null}
             />
           ))}
