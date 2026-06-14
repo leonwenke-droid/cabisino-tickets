@@ -22,21 +22,30 @@ import {
   buildSeatGroups,
   formatEntryLabel,
   cloneTables,
-  buildAssignmentMap,
+  buildAssignmentSignatures,
   buildResultFromTables,
   moveEntryToTable,
   shuffleNeutralEntries,
   syncManualEntryIds,
   entryWishBroken,
   isTableOverfull,
+  sortTables,
   SEATS_PER_TABLE,
   type AssignSeatsResult,
   type TableSatisfaction,
   type EntryChipStatus,
   type AssignedTable,
+  type TableSortMode,
 } from "@/lib/assign-seats";
 
 const TABLE_COUNT_STORAGE_KEY = "admin_tische_table_count";
+const TABLE_SORT_STORAGE_KEY = "admin_tische_table_sort";
+
+const TABLE_SORT_OPTIONS: { value: TableSortMode; label: string }[] = [
+  { value: "default", label: "Standard" },
+  { value: "seats-asc", label: "Plätze ↑" },
+  { value: "seats-desc", label: "Plätze ↓" },
+];
 
 function readStoredTableCount(): { input: string; applied?: number } {
   if (typeof window === "undefined") return { input: "" };
@@ -52,6 +61,20 @@ function persistTableCount(value: string) {
   if (typeof window === "undefined") return;
   if (value.trim()) sessionStorage.setItem(TABLE_COUNT_STORAGE_KEY, value.trim());
   else sessionStorage.removeItem(TABLE_COUNT_STORAGE_KEY);
+}
+
+function readStoredTableSort(): TableSortMode {
+  if (typeof window === "undefined") return "default";
+  const stored = sessionStorage.getItem(TABLE_SORT_STORAGE_KEY);
+  if (stored === "seats-asc" || stored === "seats-desc" || stored === "default") {
+    return stored;
+  }
+  return "default";
+}
+
+function persistTableSort(mode: TableSortMode) {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(TABLE_SORT_STORAGE_KEY, mode);
 }
 
 const GLOW_BY_SATISFACTION: Record<TableSatisfaction, string> = {
@@ -293,12 +316,13 @@ export function TischeTab({
   const [appliedTableCount, setAppliedTableCount] = useState<number | undefined>(
     () => readStoredTableCount().applied
   );
+  const [tableSort, setTableSort] = useState<TableSortMode>(() => readStoredTableSort());
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [currentTables, setCurrentTables] = useState<AssignedTable[] | null>(null);
   const [manualEntryIds, setManualEntryIds] = useState<Set<string>>(new Set());
-  const [baseAssignmentMap, setBaseAssignmentMap] = useState<Map<string, number>>(
-    new Map()
-  );
+  const [baseAssignmentSignatures, setBaseAssignmentSignatures] = useState<
+    Map<string, string>
+  >(new Map());
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const fixedTableCount = appliedTableCount;
@@ -312,10 +336,20 @@ export function TischeTab({
   }, [entries, recalcKey, fixedTableCount]);
 
   useEffect(() => {
-    setCurrentTables(cloneTables(baseResult.tables));
+    setCurrentTables(sortTables(cloneTables(baseResult.tables), tableSort));
     setManualEntryIds(new Set());
-    setBaseAssignmentMap(buildAssignmentMap(baseResult.tables));
+    setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
   }, [baseResult]);
+
+  useEffect(() => {
+    setCurrentTables((prev) => (prev ? sortTables(prev, tableSort) : prev));
+    persistTableSort(tableSort);
+  }, [tableSort]);
+
+  const applyTableSort = useCallback(
+    (tables: AssignedTable[]) => sortTables(tables, tableSort),
+    [tableSort]
+  );
 
   const displayResult = useMemo(() => {
     const tables = currentTables ?? baseResult.tables;
@@ -357,16 +391,17 @@ export function TischeTab({
   }, []);
 
   const handleResetManual = useCallback(() => {
-    setCurrentTables(cloneTables(baseResult.tables));
+    setCurrentTables(applyTableSort(cloneTables(baseResult.tables)));
     setManualEntryIds(new Set());
-  }, [baseResult.tables]);
+  }, [baseResult.tables, applyTableSort]);
 
   const handleShuffle = useCallback(() => {
     if (!currentTables) return;
     const shuffled = shuffleNeutralEntries(currentTables);
-    setCurrentTables(shuffled);
-    setManualEntryIds(syncManualEntryIds(shuffled, baseAssignmentMap));
-  }, [currentTables, baseAssignmentMap]);
+    const sorted = applyTableSort(shuffled);
+    setCurrentTables(sorted);
+    setManualEntryIds(syncManualEntryIds(sorted, baseAssignmentSignatures));
+  }, [currentTables, baseAssignmentSignatures, applyTableSort]);
 
   const handleExport = useCallback(async () => {
     const text = exportSeatingPlan(displayResult, manualEntryIds);
@@ -398,10 +433,11 @@ export function TischeTab({
       const newTables = moveEntryToTable(tables, entryId, targetIdx);
       if (!newTables) return;
 
-      setCurrentTables(newTables);
-      setManualEntryIds(syncManualEntryIds(newTables, baseAssignmentMap));
+      const sorted = applyTableSort(newTables);
+      setCurrentTables(sorted);
+      setManualEntryIds(syncManualEntryIds(sorted, baseAssignmentSignatures));
     },
-    [currentTables, baseResult.tables, baseAssignmentMap]
+    [currentTables, baseResult.tables, baseAssignmentSignatures, applyTableSort]
   );
 
   const handleDragCancel = useCallback(() => {
@@ -449,7 +485,23 @@ export function TischeTab({
             className="input-dark w-full rounded-lg px-3 py-2 text-sm font-sans outline-none"
           />
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex-1 min-w-[140px]">
+          <label className="block text-cream-muted text-[10px] font-sans uppercase tracking-wide mb-1.5">
+            Sortierung
+          </label>
+          <select
+            value={tableSort}
+            onChange={(e) => setTableSort(e.target.value as TableSortMode)}
+            className="input-dark w-full rounded-lg px-3 py-2 text-sm font-sans outline-none"
+          >
+            {TABLE_SORT_OPTIONS.map(({ value, label }) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-2 sm:ml-auto">
           <button
             type="button"
             onClick={handleRecalculate}

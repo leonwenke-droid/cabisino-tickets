@@ -655,6 +655,48 @@ export function buildAssignmentMap(tables: AssignedTable[]): Map<string, number>
   return map;
 }
 
+/** Table composition signature — stable when empty tables are reordered to the bottom. */
+export function buildTableSignature(table: AssignedTable): string {
+  return table.entries
+    .map((e) => e.id)
+    .sort()
+    .join(",");
+}
+
+export function buildAssignmentSignatures(
+  tables: AssignedTable[]
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const table of tables) {
+    const sig = buildTableSignature(table);
+    for (const e of table.entries) map.set(e.id, sig);
+  }
+  return map;
+}
+
+export type TableSortMode = "default" | "seats-asc" | "seats-desc";
+
+export function sortTables(
+  tables: AssignedTable[],
+  mode: TableSortMode
+): AssignedTable[] {
+  const occupied = tables.filter((t) => t.entries.length > 0);
+  const empty = tables.filter((t) => t.entries.length === 0);
+
+  if (mode === "default") {
+    return [...occupied, ...empty];
+  }
+
+  const sorted = [...occupied].sort((a, b) =>
+    mode === "seats-asc" ? a.seatsUsed - b.seatsUsed : b.seatsUsed - a.seatsUsed
+  );
+  return [...sorted, ...empty];
+}
+
+export function sortTablesEmptyLast(tables: AssignedTable[]): AssignedTable[] {
+  return sortTables(tables, "default");
+}
+
 export function canDropEntryOnTable(table: AssignedTable, entry: Entry): boolean {
   return table.seatsUsed + entry.total_persons <= SEATS_PER_TABLE;
 }
@@ -681,13 +723,16 @@ export function findEntryTableIndex(
 
 export function syncManualEntryIds(
   tables: AssignedTable[],
-  baseAssignmentMap: Map<string, number>
+  baseSignatures: Map<string, string>
 ): Set<string> {
-  const currentMap = buildAssignmentMap(tables);
+  const currentSignatures = buildAssignmentSignatures(tables);
   const manual = new Set<string>();
-  for (const [id, idx] of Array.from(currentMap.entries())) {
-    if (baseAssignmentMap.get(id) !== idx) manual.add(id);
+
+  for (const [id, sig] of Array.from(currentSignatures.entries())) {
+    const baseSig = baseSignatures.get(id);
+    if (baseSig !== undefined && baseSig !== sig) manual.add(id);
   }
+
   return manual;
 }
 
