@@ -69,7 +69,7 @@ export const ALLOWED_NAMES: string[] = [
   "Sophia Pham Thi",
   "Theo Halm",
   "Thies Groenewold",
-  "Thore Daatmeyer",
+  "Thore Daalmeyer",
   "Tino Brinker",
   "Tomke Eden",
   "Viktor Scholz",
