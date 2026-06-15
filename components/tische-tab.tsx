@@ -27,14 +27,12 @@ import {
   moveEntryToTable,
   shuffleNeutralEntries,
   syncManualEntryIds,
-  entryWishBroken,
   isTableOverfull,
   sortTables,
   findEntryTableIndex,
   SEATS_PER_TABLE,
   type AssignSeatsResult,
   type TableSatisfaction,
-  type EntryChipStatus,
   type AssignedTable,
   type TableSortMode,
 } from "@/lib/assign-seats";
@@ -152,51 +150,124 @@ const GLOW_BY_SATISFACTION: Record<TableSatisfaction, string> = {
   conflict: "shadow-[0_0_32px_rgba(239,68,68,0.35)]",
 };
 
-const CHIP_STYLES: Record<EntryChipStatus, string> = {
-  fulfilled: "bg-gold/90 text-[#0a0a0f] border-gold",
-  "nearby-fulfilled": "bg-gold/70 text-[#0a0a0f] border-gold/70",
-  neutral: "bg-cream/95 text-[#0a0a0f] border-cream/80",
-  conflict: "bg-red-500/90 text-white border-red-400",
-};
+const CHIP_BASE =
+  "bg-cream/95 text-[#0a0a0f] border-cream/80";
+
+type WishDotStatus = "none" | "fulfilled" | "nearby" | "unmet" | "conflict";
+
+function truncateSitzwunsch(text: string, max = 30): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, max - 1)}…`;
+}
+
+function getWishDotStatus(
+  entry: Entry,
+  table: AssignedTable,
+  allEntries: Entry[],
+  allTables: AssignedTable[],
+  unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"],
+  overCapacityIds: Set<string>
+): WishDotStatus {
+  const chipStatus = getEntryChipStatus(
+    entry,
+    table,
+    allEntries,
+    allTables,
+    unfulfilledWishes,
+    overCapacityIds
+  );
+  const wish = entry.sitzwunsch?.trim();
+
+  if (chipStatus === "conflict") return "conflict";
+  if (!wish) return "none";
+  if (chipStatus === "fulfilled") return "fulfilled";
+  if (chipStatus === "nearby-fulfilled") return "nearby";
+  if (chipStatus === "neutral") return "unmet";
+  return "none";
+}
+
+function WishStatusDot({ status }: { status: WishDotStatus }) {
+  switch (status) {
+    case "fulfilled":
+      return (
+        <span
+          className="w-1.5 h-1.5 rounded-full bg-gold flex-shrink-0"
+          title="Wunsch erfüllt"
+        />
+      );
+    case "nearby":
+      return (
+        <span
+          className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-yellow-400 flex-shrink-0"
+          title="Nähe erfüllt"
+        >
+          <span className="text-[7px] font-bold text-[#0a0a0f] leading-none">~</span>
+        </span>
+      );
+    case "unmet":
+      return (
+        <span
+          className="w-1.5 h-1.5 rounded-full bg-orange-400 flex-shrink-0"
+          title="Wunsch nicht erfüllt"
+        />
+      );
+    case "conflict":
+      return (
+        <span
+          className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0"
+          title="Konflikt"
+        />
+      );
+    default:
+      return (
+        <span
+          className="w-1.5 h-1.5 rounded-full bg-gray-400 flex-shrink-0"
+          title="Kein Wunsch"
+        />
+      );
+  }
+}
 
 function SeatChip({
   label,
-  status,
+  wishDotStatus,
+  sitzwunsch,
   isManual,
-  wishBroken,
-  nearbyIndicator,
   dragHandle,
 }: {
   label: string;
-  status: EntryChipStatus;
+  wishDotStatus: WishDotStatus;
+  sitzwunsch?: string | null;
   isManual?: boolean;
-  wishBroken?: boolean;
-  nearbyIndicator?: boolean;
   dragHandle?: React.HTMLAttributes<HTMLSpanElement>;
 }) {
+  const wishText = sitzwunsch?.trim();
+
   return (
-    <span
-      {...dragHandle}
-      className={`relative inline-flex items-center gap-0.5 rounded-full border font-sans font-medium truncate text-[10px] px-2 py-1 max-w-[100px] cursor-grab active:cursor-grabbing touch-none ${CHIP_STYLES[status]}`}
-      title={label}
-    >
-      {nearbyIndicator && (
-        <span className="text-gold text-[9px] flex-shrink-0" title="Nähe-Wunsch erfüllt">
-          ~
-        </span>
+    <div className="flex flex-col items-center gap-0.5 max-w-[100px]">
+      <span
+        {...dragHandle}
+        className={`relative inline-flex items-center gap-1 rounded-full border font-sans font-medium truncate text-[10px] px-2 py-1 w-full cursor-grab active:cursor-grabbing touch-none ${CHIP_BASE}`}
+        title={wishText ? `${label} — ${wishText}` : label}
+      >
+        <WishStatusDot status={wishDotStatus} />
+        <span className="truncate">{label}</span>
+        {isManual && (
+          <span className="text-[7px] uppercase tracking-wide text-gray-500 flex-shrink-0">
+            manuell
+          </span>
+        )}
+      </span>
+      {wishText && (
+        <p
+          className="text-xs text-cream-muted/60 font-sans text-center leading-tight w-full truncate px-0.5"
+          title={wishText}
+        >
+          → {truncateSitzwunsch(wishText)}
+        </p>
       )}
-      {wishBroken && (
-        <span className="text-yellow-400 text-[9px] flex-shrink-0" title="Sitzwunsch nicht mehr erfüllt">
-          ⚠
-        </span>
-      )}
-      <span className="truncate">{label}</span>
-      {isManual && (
-        <span className="text-[7px] uppercase tracking-wide text-gray-500 flex-shrink-0 ml-0.5">
-          manuell
-        </span>
-      )}
-    </span>
+    </div>
   );
 }
 
@@ -237,7 +308,7 @@ function DraggableSeatGroup({
     ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` }
     : undefined;
 
-  const status = getEntryChipStatus(
+  const wishDotStatus = getWishDotStatus(
     entry,
     table,
     allEntries,
@@ -245,7 +316,6 @@ function DraggableSeatGroup({
     unfulfilledWishes,
     overCapacityIds
   );
-  const wishBroken = entryWishBroken(entry, table, allEntries, allTables);
   const isManual = manualEntryIds.has(entry.id);
 
   return (
@@ -256,10 +326,9 @@ function DraggableSeatGroup({
     >
       <SeatChip
         label={abbreviateName(entry)}
-        status={status}
+        wishDotStatus={wishDotStatus}
+        sitzwunsch={entry.sitzwunsch}
         isManual={isManual}
-        wishBroken={wishBroken}
-        nearbyIndicator={status === "nearby-fulfilled"}
         dragHandle={{ ...listeners, ...attributes }}
       />
       {guestLabels.length > 0 && (
@@ -825,24 +894,26 @@ export function TischeTab({
 
       <div className="flex flex-wrap gap-4 text-[10px] font-sans text-cream-muted justify-center">
         <span className="flex items-center gap-1.5">
-          <span className="w-4 h-4 rounded-full bg-gold/90 border border-gold" />
+          <span className="w-1.5 h-1.5 rounded-full bg-gold" />
           Wunsch erfüllt
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="text-gold text-xs">~</span>
+          <span className="inline-flex items-center justify-center w-3 h-3 rounded-full bg-yellow-400">
+            <span className="text-[7px] font-bold text-[#0a0a0f] leading-none">~</span>
+          </span>
           Nähe erfüllt
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-4 h-4 rounded-full bg-cream/95 border border-cream/80" />
+          <span className="w-1.5 h-1.5 rounded-full bg-gray-400" />
           Kein Wunsch
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="w-4 h-4 rounded-full bg-red-500/90 border border-red-400" />
-          Konflikt
+          <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+          Wunsch offen
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="text-yellow-400">⚠</span>
-          Wunsch gebrochen
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+          Konflikt
         </span>
       </div>
 
@@ -873,7 +944,10 @@ export function TischeTab({
           {activeEntry ? (
             <SeatChip
               label={abbreviateName(activeEntry)}
-              status="neutral"
+              wishDotStatus={
+                activeEntry.sitzwunsch?.trim() ? "unmet" : "none"
+              }
+              sitzwunsch={activeEntry.sitzwunsch}
             />
           ) : null}
         </DragOverlay>
