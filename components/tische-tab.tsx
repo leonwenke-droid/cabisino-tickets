@@ -13,11 +13,17 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { Entry } from "@/lib/supabase";
+import type { ParsedWish } from "@/lib/sitzwunsch-types";
+import {
+  collectUnresolvableNames,
+  entryIdsWithLowConfidence,
+} from "@/lib/sitzwunsch-types";
 import {
   assignSeats,
   exportSeatingPlan,
   getTableSatisfaction,
   getEntryChipStatus,
+  buildWishContext,
   abbreviateName,
   buildSeatGroups,
   formatEntryLabel,
@@ -167,7 +173,8 @@ function getWishDotStatus(
   allEntries: Entry[],
   allTables: AssignedTable[],
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"],
-  overCapacityIds: Set<string>
+  overCapacityIds: Set<string>,
+  aiWishes?: ParsedWish[]
 ): WishDotStatus {
   const chipStatus = getEntryChipStatus(
     entry,
@@ -175,7 +182,8 @@ function getWishDotStatus(
     allEntries,
     allTables,
     unfulfilledWishes,
-    overCapacityIds
+    overCapacityIds,
+    aiWishes
   );
   const wish = entry.sitzwunsch?.trim();
 
@@ -234,12 +242,14 @@ function SeatChip({
   wishDotStatus,
   sitzwunsch,
   isManual,
+  lowConfidenceNote,
   dragHandle,
 }: {
   label: string;
   wishDotStatus: WishDotStatus;
   sitzwunsch?: string | null;
   isManual?: boolean;
+  lowConfidenceNote?: boolean;
   dragHandle?: React.HTMLAttributes<HTMLSpanElement>;
 }) {
   const wishText = sitzwunsch?.trim();
@@ -267,6 +277,11 @@ function SeatChip({
           → {truncateSitzwunsch(wishText)}
         </p>
       )}
+      {lowConfidenceNote && (
+        <p className="text-[9px] text-gray-400 font-sans text-center leading-tight">
+          Unsichere Zuordnung
+        </p>
+      )}
     </div>
   );
 }
@@ -290,6 +305,8 @@ function DraggableSeatGroup({
   overCapacityIds,
   manualEntryIds,
   guestLabels,
+  aiWishes,
+  lowConfidenceIds,
 }: {
   entry: Entry;
   table: AssignedTable;
@@ -299,6 +316,8 @@ function DraggableSeatGroup({
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
   guestLabels: string[];
+  aiWishes?: ParsedWish[];
+  lowConfidenceIds: Set<string>;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: entry.id,
@@ -314,7 +333,8 @@ function DraggableSeatGroup({
     allEntries,
     allTables,
     unfulfilledWishes,
-    overCapacityIds
+    overCapacityIds,
+    aiWishes
   );
   const isManual = manualEntryIds.has(entry.id);
 
@@ -329,6 +349,7 @@ function DraggableSeatGroup({
         wishDotStatus={wishDotStatus}
         sitzwunsch={entry.sitzwunsch}
         isManual={isManual}
+        lowConfidenceNote={lowConfidenceIds.has(entry.id)}
         dragHandle={{ ...listeners, ...attributes }}
       />
       {guestLabels.length > 0 && (
@@ -358,6 +379,8 @@ function PokerTableCard({
   manualEntryIds,
   isDropTarget,
   showNearbyLinkAfter,
+  aiWishes,
+  lowConfidenceIds,
 }: {
   index: number;
   table: AssignedTable;
@@ -368,10 +391,17 @@ function PokerTableCard({
   manualEntryIds: Set<string>;
   isDropTarget?: boolean;
   showNearbyLinkAfter?: boolean;
+  aiWishes?: ParsedWish[];
+  lowConfidenceIds: Set<string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `table-${index}` });
 
-  const rawSatisfaction = getTableSatisfaction(table, allEntries, unfulfilledWishes);
+  const rawSatisfaction = getTableSatisfaction(
+    table,
+    allEntries,
+    unfulfilledWishes,
+    aiWishes !== undefined ? buildWishContext(allEntries, aiWishes) : undefined
+  );
   const satisfaction =
     table.manuallyResolved &&
     (rawSatisfaction === "conflict" || rawSatisfaction === "overfull")
@@ -452,6 +482,8 @@ function PokerTableCard({
                 overCapacityIds={overCapacityIds}
                 manualEntryIds={manualEntryIds}
                 guestLabels={group.guestLabels}
+                aiWishes={aiWishes}
+                lowConfidenceIds={lowConfidenceIds}
               />
             );
           })}
@@ -495,16 +527,99 @@ export function TischeTab({
   const [planInitialized, setPlanInitialized] = useState(false);
   const [planLoadedFromStorage, setPlanLoadedFromStorage] = useState(false);
   const [skipBaseResultSync, setSkipBaseResultSync] = useState(false);
+  const [aiWishes, setAiWishes] = useState<ParsedWish[] | undefined>(undefined);
+  const [analyzingWishes, setAnalyzingWishes] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [analyzeKey, setAnalyzeKey] = useState(0);
 
   const fixedTableCount = appliedTableCount;
 
+  const hasSitzwuensche = useMemo(
+    () => entries.some((e) => e.sitzwunsch?.trim()),
+    [entries]
+  );
+
+  useEffect(() => {
+    if (entries.length === 0) {
+      setAiWishes(undefined);
+      setAnalyzingWishes(false);
+      return;
+    }
+
+    if (!hasSitzwuensche) {
+      setAiWishes([]);
+      setAnalyzingWishes(false);
+      setAnalyzeError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setAnalyzingWishes(true);
+    setAnalyzeError(null);
+    setAiWishes(undefined);
+
+    fetch("/api/analyze-sitzwuensche", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": sessionStorage.getItem("admin_auth_token") ?? "",
+      },
+      body: JSON.stringify({ entries }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || "Analyse fehlgeschlagen");
+        }
+        return res.json();
+      })
+      .then((data: { wishes: ParsedWish[] }) => {
+        if (!cancelled) setAiWishes(data.wishes);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) {
+          setAnalyzeError(err.message);
+          setAiWishes(undefined);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setAnalyzingWishes(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [entries, analyzeKey, hasSitzwuensche]);
+
+  const wishesReady = !analyzingWishes && (aiWishes !== undefined || !hasSitzwuensche);
+
   const baseResult = useMemo(() => {
     void recalcKey;
-    return assignSeats(
-      entries,
-      fixedTableCount ? { fixedTableCount } : undefined
-    );
-  }, [entries, recalcKey, fixedTableCount]);
+    if (!wishesReady) {
+      return {
+        tables: [],
+        unfulfilledWishes: [],
+        oversizedGroups: [],
+        overCapacityEntries: [],
+        nearbyTableLinks: [],
+        stats: { totalWishes: 0, fulfilledWishes: 0, fulfilledPercent: 100 },
+      } satisfies AssignSeatsResult;
+    }
+    return assignSeats(entries, {
+      ...(fixedTableCount ? { fixedTableCount } : {}),
+      ...(aiWishes !== undefined ? { aiWishes } : {}),
+    });
+  }, [entries, recalcKey, fixedTableCount, aiWishes, wishesReady]);
+
+  const unresolvableNames = useMemo(
+    () => (aiWishes ? collectUnresolvableNames(aiWishes) : []),
+    [aiWishes]
+  );
+
+  const lowConfidenceIds = useMemo(
+    () => (aiWishes ? entryIdsWithLowConfidence(aiWishes) : new Set<string>()),
+    [aiWishes]
+  );
 
   useEffect(() => {
     if (planInitialized || entries.length === 0) return;
@@ -519,11 +634,11 @@ export function TischeTab({
   }, [entries, planInitialized, tableSort]);
 
   useEffect(() => {
-    if (!planInitialized || skipBaseResultSync) return;
+    if (!planInitialized || skipBaseResultSync || !wishesReady) return;
     setCurrentTables(sortTables(cloneTables(baseResult.tables), tableSort));
     setManualEntryIds(new Set());
     setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
-  }, [baseResult, skipBaseResultSync, planInitialized, tableSort]);
+  }, [baseResult, skipBaseResultSync, planInitialized, tableSort, wishesReady]);
 
   useEffect(() => {
     if (!skipBaseResultSync || !currentTables) return;
@@ -569,11 +684,16 @@ export function TischeTab({
 
   const displayResult = useMemo(() => {
     const tables = currentTables ?? baseResult.tables;
-    return buildResultFromTables(entries, tables, {
-      oversizedGroups: baseResult.oversizedGroups,
-      overCapacityEntries: baseResult.overCapacityEntries,
-    });
-  }, [currentTables, baseResult, entries]);
+    return buildResultFromTables(
+      entries,
+      tables,
+      {
+        oversizedGroups: baseResult.oversizedGroups,
+        overCapacityEntries: baseResult.overCapacityEntries,
+      },
+      aiWishes
+    );
+  }, [currentTables, baseResult, entries, aiWishes]);
 
   const totalPersons = useMemo(
     () => entries.reduce((s, e) => s + e.total_persons, 0),
@@ -602,6 +722,7 @@ export function TischeTab({
     setAppliedTableCount(applied);
     persistTableCount(tableCountInput);
     setRecalcKey((k) => k + 1);
+    setAnalyzeKey((k) => k + 1);
   }, [tableCountInput]);
 
   const handleClearPlan = useCallback(() => {
@@ -865,6 +986,26 @@ export function TischeTab({
         </div>
       )}
 
+      {analyzingWishes && (
+        <div className="rounded-2xl border border-gold/30 bg-gold/10 px-4 py-3 text-cream text-xs font-sans text-center">
+          Analysiere Sitzwünsche…
+        </div>
+      )}
+
+      {analyzeError && !analyzingWishes && (
+        <div className="rounded-2xl border border-orange-500/35 bg-orange-500/10 px-4 py-3 text-orange-200/90 text-xs font-sans">
+          KI-Analyse fehlgeschlagen ({analyzeError}). Es wird die Standard-Zuordnung verwendet.
+        </div>
+      )}
+
+      {unresolvableNames.length > 0 && (
+        <div className="rounded-2xl border border-yellow-500/35 bg-yellow-500/10 px-4 py-3 text-yellow-200/90 text-xs font-sans leading-relaxed">
+          Folgende Namen konnten nicht zugeordnet werden:{" "}
+          <span className="text-yellow-100">{unresolvableNames.join(", ")}</span>.
+          Bitte nachfragen.
+        </div>
+      )}
+
       {visibleOversizedGroups.length > 0 && (
         <div className="rounded-2xl border border-yellow-500/35 bg-yellow-500/10 px-4 py-3 space-y-2">
           {visibleOversizedGroups.map((group, i) => (
@@ -923,6 +1064,7 @@ export function TischeTab({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
+        {wishesReady ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {tables.map((table, i) => (
             <PokerTableCard
@@ -936,9 +1078,16 @@ export function TischeTab({
               manualEntryIds={manualEntryIds}
               isDropTarget={activeDragId !== null}
               showNearbyLinkAfter={Boolean(table.nearbyLinkNext)}
+              aiWishes={aiWishes}
+              lowConfidenceIds={lowConfidenceIds}
             />
           ))}
         </div>
+        ) : (
+          <div className="felt-card rounded-2xl p-8 text-center">
+            <p className="text-cream-muted text-sm font-sans">Analysiere Sitzwünsche…</p>
+          </div>
+        )}
 
         <DragOverlay>
           {activeEntry ? (

@@ -1,4 +1,5 @@
 import type { Entry } from "@/lib/supabase";
+import type { ParsedWish } from "@/lib/sitzwunsch-types";
 
 export const SEATS_PER_TABLE = 8;
 
@@ -7,7 +8,70 @@ export type WishPreferenceType = "same-table" | "nearby";
 export type ParsedWishMention = {
   entry: Entry;
   type: WishPreferenceType;
+  confidence?: "high" | "medium" | "low";
 };
+
+export type WishContext = {
+  lookup: Map<string, ParsedWishMention[]>;
+};
+
+export function buildWishContext(
+  entries: Entry[],
+  aiWishes?: ParsedWish[]
+): WishContext {
+  const lookup = new Map<string, ParsedWishMention[]>();
+
+  if (aiWishes && aiWishes.length > 0) {
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    for (const entry of entries) lookup.set(entry.id, []);
+
+    for (const wish of aiWishes) {
+      if (!byId.has(wish.entryId)) continue;
+      const mentions: ParsedWishMention[] = [];
+      for (const target of wish.targets) {
+        if (target.wishType === "none") continue;
+        const matched = byId.get(target.entryId);
+        if (!matched || target.entryId === wish.entryId) continue;
+        mentions.push({
+          entry: matched,
+          type: target.wishType === "same_table" ? "same-table" : "nearby",
+          confidence: target.confidence,
+        });
+      }
+      lookup.set(wish.entryId, mentions);
+    }
+    return { lookup };
+  }
+
+  for (const entry of entries) {
+    const wish = entry.sitzwunsch?.trim();
+    lookup.set(
+      entry.id,
+      wish ? parseSitzwunschPreferences(wish, entries, entry.id) : []
+    );
+  }
+  return { lookup };
+}
+
+function getPreferences(ctx: WishContext, entryId: string): ParsedWishMention[] {
+  return ctx.lookup.get(entryId) ?? [];
+}
+
+function getSameTableTargets(ctx: WishContext, entryId: string): Entry[] {
+  return getPreferences(ctx, entryId)
+    .filter((p) => p.type === "same-table")
+    .map((p) => p.entry);
+}
+
+function getNearbyTargets(ctx: WishContext, entryId: string): Entry[] {
+  return getPreferences(ctx, entryId)
+    .filter((p) => p.type === "nearby")
+    .map((p) => p.entry);
+}
+
+function entryHasPreferences(ctx: WishContext, entryId: string): boolean {
+  return getPreferences(ctx, entryId).length > 0;
+}
 
 export type NearbyTableLink = {
   tableIndexA: number;
@@ -184,7 +248,7 @@ export function parseSitzwunschMentions(
   return parseSitzwunschPreferences(sitzwunsch, entries, excludeId).map((p) => p.entry);
 }
 
-function buildSameTableGraph(entries: Entry[]): Map<string, Set<string>> {
+function buildSameTableGraph(entries: Entry[], ctx: WishContext): Map<string, Set<string>> {
   const graph = new Map<string, Set<string>>();
   const ensure = (id: string) => {
     if (!graph.has(id)) graph.set(id, new Set());
@@ -192,11 +256,7 @@ function buildSameTableGraph(entries: Entry[]): Map<string, Set<string>> {
 
   for (const entry of entries) {
     ensure(entry.id);
-    const wish = entry.sitzwunsch?.trim();
-    if (!wish) continue;
-
-    const mentioned = parseSameTableMentions(wish, entries, entry.id);
-    for (const other of mentioned) {
+    for (const other of getSameTableTargets(ctx, entry.id)) {
       ensure(other.id);
       graph.get(entry.id)!.add(other.id);
       graph.get(other.id)!.add(entry.id);
@@ -300,8 +360,8 @@ function splitUntilFits(
   return result;
 }
 
-function isNeutralCluster(cluster: Cluster): boolean {
-  return cluster.every((e) => !e.sitzwunsch?.trim());
+function isNeutralCluster(cluster: Cluster, ctx: WishContext): boolean {
+  return cluster.every((e) => !entryHasPreferences(ctx, e.id));
 }
 
 function createEmptyTables(count: number): AssignedTable[] {
@@ -472,18 +532,16 @@ function assignNeutralEntries(
 export function mentionsMutually(
   entryA: Entry,
   entryB: Entry,
-  allEntries?: Entry[]
+  allEntries?: Entry[],
+  ctx?: WishContext
 ): boolean {
-  const wishA = entryA.sitzwunsch?.trim();
-  const wishB = entryB.sitzwunsch?.trim();
-  if (!wishA || !wishB) return false;
-
   const entries = allEntries ?? [entryA, entryB];
+  const wishCtx = ctx ?? buildWishContext(entries);
 
-  const aMentionsB = parseSameTableMentions(wishA, entries, entryA.id).some(
+  const aMentionsB = getSameTableTargets(wishCtx, entryA.id).some(
     (e) => e.id === entryB.id
   );
-  const bMentionsA = parseSameTableMentions(wishB, entries, entryB.id).some(
+  const bMentionsA = getSameTableTargets(wishCtx, entryB.id).some(
     (e) => e.id === entryA.id
   );
 
@@ -534,16 +592,13 @@ export function isWishFulfilled(
 
 function computeUnfulfilledWishes(
   entries: Entry[],
-  tables: AssignedTable[]
+  tables: AssignedTable[],
+  ctx: WishContext
 ): UnfulfilledWish[] {
   const unfulfilled: UnfulfilledWish[] = [];
 
   for (const entry of entries) {
-    const wish = entry.sitzwunsch?.trim();
-    if (!wish) continue;
-
-    const preferences = parseSitzwunschPreferences(wish, entries, entry.id);
-    for (const { entry: wanted, type } of preferences) {
+    for (const { entry: wanted, type } of getPreferences(ctx, entry.id)) {
       if (isWishFulfilled(tables, entry, wanted, type)) continue;
 
       unfulfilled.push({
@@ -554,7 +609,8 @@ function computeUnfulfilledWishes(
             ? `${entry.vorname} ${entry.nachname} wollte in der Nähe von ${wanted.vorname} ${wanted.nachname} sitzen`
             : `${entry.vorname} ${entry.nachname} wollte mit ${wanted.vorname} ${wanted.nachname} sitzen`,
         isMutualConflict:
-          type === "same-table" && mentionsMutually(entry, wanted, entries),
+          type === "same-table" &&
+          mentionsMutually(entry, wanted, entries, ctx),
         preferenceType: type,
       });
     }
@@ -565,17 +621,14 @@ function computeUnfulfilledWishes(
 
 function computeWishStats(
   entries: Entry[],
-  tables: AssignedTable[]
+  tables: AssignedTable[],
+  ctx: WishContext
 ): AssignSeatsResult["stats"] {
   let totalWishes = 0;
   let fulfilledWishes = 0;
 
   for (const entry of entries) {
-    const wish = entry.sitzwunsch?.trim();
-    if (!wish) continue;
-
-    const preferences = parseSitzwunschPreferences(wish, entries, entry.id);
-    for (const { entry: wanted, type } of preferences) {
+    for (const { entry: wanted, type } of getPreferences(ctx, entry.id)) {
       totalWishes++;
       if (isWishFulfilled(tables, entry, wanted, type)) fulfilledWishes++;
     }
@@ -589,17 +642,14 @@ function computeWishStats(
 
 function computeNearbyTableLinks(
   entries: Entry[],
-  tables: AssignedTable[]
+  tables: AssignedTable[],
+  ctx: WishContext
 ): NearbyTableLink[] {
   const links: NearbyTableLink[] = [];
   const seen = new Set<string>();
 
   for (const entry of entries) {
-    const wish = entry.sitzwunsch?.trim();
-    if (!wish) continue;
-
-    const nearby = parseNearbyMentions(wish, entries, entry.id);
-    for (const target of nearby) {
+    for (const target of getNearbyTargets(ctx, entry.id)) {
       const idxA = findEntryTableIndex(tables, entry.id);
       const idxB = findEntryTableIndex(tables, target.id);
       if (idxA < 0 || idxB < 0) continue;
@@ -634,15 +684,13 @@ function markNearbyLinkNext(tables: AssignedTable[], links: NearbyTableLink[]): 
 
 function optimizeNearbyTableOrder(
   tables: AssignedTable[],
-  entries: Entry[]
+  entries: Entry[],
+  ctx: WishContext
 ): AssignedTable[] {
   const result = cloneTables(tables);
 
   for (const entry of entries) {
-    const wish = entry.sitzwunsch?.trim();
-    if (!wish) continue;
-
-    for (const target of parseNearbyMentions(wish, entries, entry.id)) {
+    for (const target of getNearbyTargets(ctx, entry.id)) {
       if (isNearbyWishFulfilled(result, entry, target)) continue;
 
       const idxA = findEntryTableIndex(result, entry.id);
@@ -666,8 +714,10 @@ export type TableSatisfaction = "none" | "partial" | "full" | "overfull" | "conf
 export function getTableSatisfaction(
   table: AssignedTable,
   allEntries: Entry[],
-  unfulfilledWishes: UnfulfilledWish[]
+  unfulfilledWishes: UnfulfilledWish[],
+  ctx?: WishContext
 ): TableSatisfaction {
+  const wishCtx = ctx ?? buildWishContext(allEntries);
   if (table.seatsUsed > SEATS_PER_TABLE) return "overfull";
 
   const hasConflictOnTable = unfulfilledWishes.some(
@@ -678,14 +728,14 @@ export function getTableSatisfaction(
   );
   if (hasConflictOnTable) return "conflict";
 
-  const withWish = table.entries.filter((e) => e.sitzwunsch?.trim());
+  const withWish = table.entries.filter((e) => entryHasPreferences(wishCtx, e.id));
   if (withWish.length === 0) return "none";
 
   let hasAnyMention = false;
   let allOnSameTable = true;
 
   for (const entry of withWish) {
-    const sameTableMentions = parseSameTableMentions(entry.sitzwunsch!, allEntries, entry.id);
+    const sameTableMentions = getSameTableTargets(wishCtx, entry.id);
     if (sameTableMentions.length === 0) continue;
 
     hasAnyMention = true;
@@ -707,8 +757,10 @@ export function getEntryChipStatus(
   allEntries: Entry[],
   allTables: AssignedTable[],
   unfulfilledWishes: UnfulfilledWish[],
-  overCapacityIds: Set<string>
+  overCapacityIds: Set<string>,
+  aiWishes?: ParsedWish[]
 ): EntryChipStatus {
+  const wishCtx = buildWishContext(allEntries, aiWishes);
   if (overCapacityIds.has(entry.id)) return "conflict";
 
   const hasMutualConflict = unfulfilledWishes.some(
@@ -718,12 +770,9 @@ export function getEntryChipStatus(
   );
   if (hasMutualConflict) return "conflict";
 
-  const wish = entry.sitzwunsch?.trim();
-  if (!wish) return "neutral";
+  if (!entryHasPreferences(wishCtx, entry.id)) return "neutral";
 
-  const preferences = parseSitzwunschPreferences(wish, allEntries, entry.id);
-  if (preferences.length === 0) return "neutral";
-
+  const preferences = getPreferences(wishCtx, entry.id);
   const sameTable = preferences.filter((p) => p.type === "same-table");
   const nearby = preferences.filter((p) => p.type === "nearby");
 
@@ -783,7 +832,7 @@ export function buildSeatGroups(table: AssignedTable): SeatGroup[] {
 
 export function assignSeats(
   entries: Entry[],
-  options?: { fixedTableCount?: number }
+  options?: { fixedTableCount?: number; aiWishes?: ParsedWish[] }
 ): AssignSeatsResult {
   const emptyResult: AssignSeatsResult = {
     tables: [],
@@ -811,12 +860,13 @@ export function assignSeats(
   const initialTableCount = fixedCount ?? autoTableCount;
   const lockTableCount = fixedCount !== undefined && fixedCount > 0;
 
-  const graph = buildSameTableGraph(entries);
+  const wishCtx = buildWishContext(entries, options?.aiWishes);
+  const graph = buildSameTableGraph(entries, wishCtx);
   const clusters = connectedComponents(entries, graph);
 
-  const preferenceClusters = clusters.filter((c) => !isNeutralCluster(c));
+  const preferenceClusters = clusters.filter((c) => !isNeutralCluster(c, wishCtx));
   const neutralEntries = clusters
-    .filter(isNeutralCluster)
+    .filter((c) => isNeutralCluster(c, wishCtx))
     .flat()
     .sort((a, b) => b.total_persons - a.total_persons);
 
@@ -847,12 +897,12 @@ export function assignSeats(
     resultTables = tables.filter((t) => t.entries.length > 0);
   }
 
-  resultTables = optimizeNearbyTableOrder(resultTables, entries);
-  const nearbyTableLinks = computeNearbyTableLinks(entries, resultTables);
+  resultTables = optimizeNearbyTableOrder(resultTables, entries, wishCtx);
+  const nearbyTableLinks = computeNearbyTableLinks(entries, resultTables, wishCtx);
   markNearbyLinkNext(resultTables, nearbyTableLinks);
 
-  const unfulfilledWishes = computeUnfulfilledWishes(entries, resultTables);
-  const stats = computeWishStats(entries, resultTables);
+  const unfulfilledWishes = computeUnfulfilledWishes(entries, resultTables, wishCtx);
+  const stats = computeWishStats(entries, resultTables, wishCtx);
 
   return {
     tables: resultTables,
@@ -1074,13 +1124,15 @@ export function shuffleNeutralEntries(tables: AssignedTable[]): AssignedTable[] 
 export function buildResultFromTables(
   entries: Entry[],
   tables: AssignedTable[],
-  meta: Pick<AssignSeatsResult, "oversizedGroups" | "overCapacityEntries">
+  meta: Pick<AssignSeatsResult, "oversizedGroups" | "overCapacityEntries">,
+  aiWishes?: ParsedWish[]
 ): AssignSeatsResult {
+  const wishCtx = buildWishContext(entries, aiWishes);
   const tablesWithLinks = cloneTables(tables);
-  const nearbyTableLinks = computeNearbyTableLinks(entries, tablesWithLinks);
+  const nearbyTableLinks = computeNearbyTableLinks(entries, tablesWithLinks, wishCtx);
   markNearbyLinkNext(tablesWithLinks, nearbyTableLinks);
-  const unfulfilledWishes = computeUnfulfilledWishes(entries, tablesWithLinks);
-  const stats = computeWishStats(entries, tablesWithLinks);
+  const unfulfilledWishes = computeUnfulfilledWishes(entries, tablesWithLinks, wishCtx);
+  const stats = computeWishStats(entries, tablesWithLinks, wishCtx);
   return {
     tables: tablesWithLinks,
     unfulfilledWishes,
@@ -1095,12 +1147,11 @@ export function entryWishBroken(
   entry: Entry,
   table: AssignedTable,
   allEntries: Entry[],
-  allTables: AssignedTable[]
+  allTables: AssignedTable[],
+  aiWishes?: ParsedWish[]
 ): boolean {
-  const wish = entry.sitzwunsch?.trim();
-  if (!wish) return false;
-
-  const preferences = parseSitzwunschPreferences(wish, allEntries, entry.id);
+  const wishCtx = buildWishContext(allEntries, aiWishes);
+  const preferences = getPreferences(wishCtx, entry.id);
   if (preferences.length === 0) return false;
 
   return preferences.some(
