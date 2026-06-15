@@ -1,4 +1,3 @@
-import { ALLOWED_NAMES } from "@/lib/allowed-names";
 import type { Entry } from "@/lib/supabase";
 
 export const SEATS_PER_TABLE = 8;
@@ -30,6 +29,8 @@ export type UnfulfilledWish = {
   from: Entry;
   wanted: Entry;
   reason: string;
+  /** True only when both entries wished to sit together but were placed apart. */
+  isMutualConflict: boolean;
 };
 
 export type EntryChipStatus = "fulfilled" | "neutral" | "conflict";
@@ -40,41 +41,78 @@ function clusterPersons(cluster: Cluster): number {
   return cluster.reduce((sum, e) => sum + e.total_persons, 0);
 }
 
-function findEntryByAllowedName(name: string, entries: Entry[]): Entry | undefined {
-  const normalizedName = name.trim().toLowerCase();
-  return entries.find(
-    (e) => `${e.vorname} ${e.nachname}`.trim().toLowerCase() === normalizedName
-  );
+const SITZWUNSCH_PREFIXES = [
+  /^tisch\s+in\s+der\s+n[aä]he\s+von\s+/i,
+  /^neben\s+/i,
+  /^mit\s+/i,
+  /^bei\s+/i,
+];
+
+function stripSitzwunschPrefixes(text: string): string {
+  let result = text.trim();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const prefix of SITZWUNSCH_PREFIXES) {
+      const next = result.replace(prefix, "").trim();
+      if (next !== result) {
+        result = next;
+        changed = true;
+      }
+    }
+  }
+  return result;
 }
 
-/** Match sitzwunsch text against ALLOWED_NAMES; return corresponding entries. */
+function tokenizeSitzwunsch(text: string): string[] {
+  const stripped = stripSitzwunschPrefixes(text);
+  return stripped
+    .split(/\s*,\s*|\s+und\s+|\s*&\s*/i)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+function entryFullName(entry: Entry): string {
+  return `${entry.vorname} ${entry.nachname}`.trim().toLowerCase();
+}
+
+function matchTokenToEntries(token: string, entries: Entry[]): Entry[] {
+  const t = token.trim().toLowerCase();
+  if (!t) return [];
+
+  const matches: Entry[] = [];
+  for (const entry of entries) {
+    const full = entryFullName(entry);
+    const first = entry.vorname.trim().toLowerCase();
+    const last = entry.nachname.trim().toLowerCase();
+
+    const matched =
+      full === t ||
+      first === t ||
+      last === t ||
+      (t.length > 3 && (full.includes(t) || first.includes(t) || last.includes(t)));
+
+    if (matched) matches.push(entry);
+  }
+  return matches;
+}
+
+/** Match sitzwunsch text against registered entries; return corresponding entries. */
 export function parseSitzwunschMentions(
   sitzwunsch: string,
   entries: Entry[],
   excludeId?: string
 ): Entry[] {
-  const wish = sitzwunsch.toLowerCase();
+  const tokens = tokenizeSitzwunsch(sitzwunsch);
   const matched: Entry[] = [];
   const seen = new Set<string>();
 
-  for (const name of ALLOWED_NAMES) {
-    const parts = name.trim().split(/\s+/);
-    const first = parts[0]?.toLowerCase() ?? "";
-    const last = parts.slice(1).join(" ").toLowerCase();
-    const full = name.toLowerCase();
-
-    const nameMatches =
-      (full.length > 0 && wish.includes(full)) ||
-      (first.length > 1 && wish.includes(first)) ||
-      (last.length > 2 && wish.includes(last));
-
-    if (!nameMatches) continue;
-
-    const entry = findEntryByAllowedName(name, entries);
-    if (!entry || entry.id === excludeId || seen.has(entry.id)) continue;
-
-    matched.push(entry);
-    seen.add(entry.id);
+  for (const token of tokens) {
+    for (const entry of matchTokenToEntries(token, entries)) {
+      if (entry.id === excludeId || seen.has(entry.id)) continue;
+      matched.push(entry);
+      seen.add(entry.id);
+    }
   }
 
   return matched;
@@ -328,17 +366,17 @@ function assignLargePreferenceCluster(
     return;
   }
 
-  if (persons > SEATS_PER_TABLE) {
-    oversizedGroups.push({
-      entries: cluster,
-      names: cluster.map((e) => `${e.vorname} ${e.nachname}`).join(", "),
-    });
-    const parts = splitUntilFits(cluster, graph);
-    assignClusterPartsAdjacent(tables, parts, lockTableCount);
+  if (persons <= SEATS_PER_TABLE) {
+    assignCluster(tables, cluster, lockTableCount);
     return;
   }
 
-  assignCluster(tables, cluster, lockTableCount);
+  oversizedGroups.push({
+    entries: cluster,
+    names: cluster.map((e) => `${e.vorname} ${e.nachname}`).join(", "),
+  });
+  const parts = splitUntilFits(cluster, graph);
+  assignClusterPartsAdjacent(tables, parts, lockTableCount);
 }
 
 function assignNeutralEntries(
@@ -365,15 +403,21 @@ function assignNeutralEntries(
   }
 }
 
-export function mentionsMutually(entryA: Entry, entryB: Entry): boolean {
+export function mentionsMutually(
+  entryA: Entry,
+  entryB: Entry,
+  allEntries?: Entry[]
+): boolean {
   const wishA = entryA.sitzwunsch?.trim();
   const wishB = entryB.sitzwunsch?.trim();
   if (!wishA || !wishB) return false;
 
-  const aMentionsB = parseSitzwunschMentions(wishA, [entryB], entryA.id).some(
+  const entries = allEntries ?? [entryA, entryB];
+
+  const aMentionsB = parseSitzwunschMentions(wishA, entries, entryA.id).some(
     (e) => e.id === entryB.id
   );
-  const bMentionsA = parseSitzwunschMentions(wishB, [entryA], entryB.id).some(
+  const bMentionsA = parseSitzwunschMentions(wishB, entries, entryB.id).some(
     (e) => e.id === entryA.id
   );
 
@@ -409,6 +453,7 @@ function computeUnfulfilledWishes(
           from: entry,
           wanted,
           reason: `${entry.vorname} ${entry.nachname} wollte mit ${wanted.vorname} ${wanted.nachname} sitzen`,
+          isMutualConflict: mentionsMutually(entry, wanted, entries),
         });
       }
     }
@@ -450,8 +495,11 @@ export function getTableSatisfaction(
 ): TableSatisfaction {
   if (table.seatsUsed > SEATS_PER_TABLE) return "overfull";
 
-  const hasConflictOnTable = unfulfilledWishes.some((w) =>
-    table.entries.some((e) => e.id === w.from.id)
+  const hasConflictOnTable = unfulfilledWishes.some(
+    (w) =>
+      w.isMutualConflict &&
+      (table.entries.some((e) => e.id === w.from.id) ||
+        table.entries.some((e) => e.id === w.wanted.id))
   );
   if (hasConflictOnTable) return "conflict";
 
@@ -460,7 +508,6 @@ export function getTableSatisfaction(
 
   let hasAnyMention = false;
   let allOnSameTable = true;
-  let allMutual = true;
 
   for (const entry of withWish) {
     const mentioned = parseSitzwunschMentions(entry.sitzwunsch!, allEntries, entry.id);
@@ -471,12 +518,11 @@ export function getTableSatisfaction(
     for (const wanted of mentioned) {
       const onTable = table.entries.some((e) => e.id === wanted.id);
       if (!onTable) allOnSameTable = false;
-      if (!mentionsMutually(entry, wanted)) allMutual = false;
     }
   }
 
   if (!hasAnyMention) return "none";
-  if (allOnSameTable && allMutual) return "full";
+  if (allOnSameTable) return "full";
   return "partial";
 }
 
@@ -489,8 +535,12 @@ export function getEntryChipStatus(
 ): EntryChipStatus {
   if (overCapacityIds.has(entry.id)) return "conflict";
 
-  const hasConflict = unfulfilledWishes.some((w) => w.from.id === entry.id);
-  if (hasConflict) return "conflict";
+  const hasMutualConflict = unfulfilledWishes.some(
+    (w) =>
+      w.isMutualConflict &&
+      (w.from.id === entry.id || w.wanted.id === entry.id)
+  );
+  if (hasMutualConflict) return "conflict";
 
   const wish = entry.sitzwunsch?.trim();
   if (!wish) return "neutral";
@@ -501,7 +551,7 @@ export function getEntryChipStatus(
   const allOnTable = mentioned.every((m) =>
     table.entries.some((e) => e.id === m.id)
   );
-  if (!allOnTable) return "conflict";
+  if (!allOnTable) return "neutral";
 
   return "fulfilled";
 }
