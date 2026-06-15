@@ -133,7 +133,7 @@ export default function AdminPage() {
   };
 
   const confirmationTotal = scanResult?.type === "found"
-    ? scanResult.entry.total_price + lateNightCount * 32 + abibuchCount * 64
+    ? scanResult.entry.total_price + lateNightCount * 32 + abibuchCount * 25
     : 0;
 
   const handleEntrySaved = (updated: Entry) => {
@@ -329,7 +329,7 @@ export default function AdminPage() {
                             </button>
                           </div>
                           <div className="flex-1 text-cream text-xs leading-tight">
-                            Abibuch · 64 € / Stk
+                            Abibuch · 25 € / Stk
                           </div>
                         </div>
                       </div>
