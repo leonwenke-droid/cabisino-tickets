@@ -30,6 +30,7 @@ import {
   entryWishBroken,
   isTableOverfull,
   sortTables,
+  findEntryTableIndex,
   SEATS_PER_TABLE,
   type AssignSeatsResult,
   type TableSatisfaction,
@@ -40,6 +41,72 @@ import {
 
 const TABLE_COUNT_STORAGE_KEY = "admin_tische_table_count";
 const TABLE_SORT_STORAGE_KEY = "admin_tische_table_sort";
+const TISCHPLAN_STORAGE_KEY = "kabisino-tischplan";
+
+type PersistedTable = {
+  entryIds: string[];
+  manuallyResolved?: boolean;
+  groupSplit?: boolean;
+};
+
+type PersistedTischplan = {
+  tables: PersistedTable[];
+};
+
+function serializeTischplan(tables: AssignedTable[]): PersistedTischplan {
+  return {
+    tables: tables.map((t) => ({
+      entryIds: t.entries.map((e) => e.id),
+      manuallyResolved: t.manuallyResolved,
+      groupSplit: t.groupSplit,
+    })),
+  };
+}
+
+function deserializeTischplan(data: PersistedTischplan, entries: Entry[]): AssignedTable[] {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  return data.tables.map((t) => {
+    const tableEntries = t.entryIds
+      .map((id) => byId.get(id))
+      .filter((e): e is Entry => e !== undefined);
+    return {
+      entries: tableEntries,
+      seatsUsed: tableEntries.reduce((sum, e) => sum + e.total_persons, 0),
+      groupSplit: t.groupSplit,
+      manuallyResolved: t.manuallyResolved,
+    };
+  });
+}
+
+function persistTischplan(tables: AssignedTable[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(TISCHPLAN_STORAGE_KEY, JSON.stringify(serializeTischplan(tables)));
+}
+
+function clearPersistedTischplan() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(TISCHPLAN_STORAGE_KEY);
+}
+
+function createEmptyAssignedTables(count: number): AssignedTable[] {
+  return Array.from({ length: Math.max(count, 1) }, () => ({
+    entries: [],
+    seatsUsed: 0,
+  }));
+}
+
+function loadPersistedTischplan(entries: Entry[]): AssignedTable[] | null {
+  if (typeof window === "undefined" || entries.length === 0) return null;
+  const raw = localStorage.getItem(TISCHPLAN_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as PersistedTischplan;
+    if (!Array.isArray(parsed.tables)) return null;
+    return deserializeTischplan(parsed, entries);
+  } catch {
+    return null;
+  }
+}
 
 const TABLE_SORT_OPTIONS: { value: TableSortMode; label: string }[] = [
   { value: "default", label: "Standard" },
@@ -219,8 +286,13 @@ function PokerTableCard({
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `table-${index}` });
 
-  const satisfaction = getTableSatisfaction(table, allEntries, unfulfilledWishes);
-  const overfull = isTableOverfull(table);
+  const rawSatisfaction = getTableSatisfaction(table, allEntries, unfulfilledWishes);
+  const satisfaction =
+    table.manuallyResolved &&
+    (rawSatisfaction === "conflict" || rawSatisfaction === "overfull")
+      ? "partial"
+      : rawSatisfaction;
+  const overfull = !table.manuallyResolved && isTableOverfull(table);
   const seatGroups = buildSeatGroups(table);
   const manualCount = table.entries.filter((e) => manualEntryIds.has(e.id)).length;
 
@@ -324,6 +396,9 @@ export function TischeTab({
     Map<string, string>
   >(new Map());
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [planInitialized, setPlanInitialized] = useState(false);
+  const [planLoadedFromStorage, setPlanLoadedFromStorage] = useState(false);
+  const [skipBaseResultSync, setSkipBaseResultSync] = useState(false);
 
   const fixedTableCount = appliedTableCount;
 
@@ -336,10 +411,55 @@ export function TischeTab({
   }, [entries, recalcKey, fixedTableCount]);
 
   useEffect(() => {
+    if (planInitialized || entries.length === 0) return;
+
+    const persisted = loadPersistedTischplan(entries);
+    if (persisted) {
+      setCurrentTables(sortTables(persisted, tableSort));
+      setSkipBaseResultSync(true);
+      setPlanLoadedFromStorage(true);
+    }
+    setPlanInitialized(true);
+  }, [entries, planInitialized, tableSort]);
+
+  useEffect(() => {
+    if (!planInitialized || skipBaseResultSync) return;
     setCurrentTables(sortTables(cloneTables(baseResult.tables), tableSort));
     setManualEntryIds(new Set());
     setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
-  }, [baseResult]);
+  }, [baseResult, skipBaseResultSync, planInitialized, tableSort]);
+
+  useEffect(() => {
+    if (!skipBaseResultSync || !currentTables) return;
+    setManualEntryIds(
+      syncManualEntryIds(currentTables, buildAssignmentSignatures(baseResult.tables))
+    );
+    setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
+  }, [skipBaseResultSync, currentTables, baseResult.tables]);
+
+  useEffect(() => {
+    if (!skipBaseResultSync) return;
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    setCurrentTables((prev) => {
+      if (!prev) return prev;
+      let changed = false;
+      const next = prev.map((table) => {
+        const freshEntries = table.entries
+          .map((e) => byId.get(e.id))
+          .filter((e): e is Entry => e !== undefined);
+        if (
+          freshEntries.length !== table.entries.length ||
+          freshEntries.some((e, i) => e !== table.entries[i])
+        ) {
+          changed = true;
+        }
+        const seatsUsed = freshEntries.reduce((s, e) => s + e.total_persons, 0);
+        if (seatsUsed !== table.seatsUsed) changed = true;
+        return { ...table, entries: freshEntries, seatsUsed };
+      });
+      return changed ? next : prev;
+    });
+  }, [entries, skipBaseResultSync]);
 
   useEffect(() => {
     setCurrentTables((prev) => (prev ? sortTables(prev, tableSort) : prev));
@@ -378,6 +498,9 @@ export function TischeTab({
     : null;
 
   const handleRecalculate = useCallback(() => {
+    clearPersistedTischplan();
+    setSkipBaseResultSync(false);
+    setPlanLoadedFromStorage(false);
     const n = parseInt(tableCountInput.trim(), 10);
     const applied = Number.isFinite(n) && n > 0 ? n : undefined;
     setAppliedTableCount(applied);
@@ -385,12 +508,28 @@ export function TischeTab({
     setRecalcKey((k) => k + 1);
   }, [tableCountInput]);
 
+  const handleClearPlan = useCallback(() => {
+    clearPersistedTischplan();
+    setSkipBaseResultSync(false);
+    setPlanLoadedFromStorage(false);
+    const autoCount = Math.max(
+      1,
+      Math.ceil(entries.reduce((s, e) => s + e.total_persons, 0) / SEATS_PER_TABLE)
+    );
+    const count = appliedTableCount ?? autoCount;
+    setCurrentTables(createEmptyAssignedTables(count));
+    setManualEntryIds(new Set());
+  }, [appliedTableCount, entries]);
+
   const handleTableCountChange = useCallback((value: string) => {
     setTableCountInput(value);
     persistTableCount(value);
   }, []);
 
   const handleResetManual = useCallback(() => {
+    clearPersistedTischplan();
+    setSkipBaseResultSync(false);
+    setPlanLoadedFromStorage(false);
     setCurrentTables(applyTableSort(cloneTables(baseResult.tables)));
     setManualEntryIds(new Set());
   }, [baseResult.tables, applyTableSort]);
@@ -429,13 +568,20 @@ export function TischeTab({
 
       const targetIdx = parseInt(String(overId).replace("table-", ""), 10);
       const tables = currentTables ?? baseResult.tables;
+      const sourceIdx = findEntryTableIndex(tables, entryId);
 
       const newTables = moveEntryToTable(tables, entryId, targetIdx);
       if (!newTables) return;
 
+      if (sourceIdx >= 0) newTables[sourceIdx].manuallyResolved = true;
+      if (targetIdx >= 0 && targetIdx !== sourceIdx) {
+        newTables[targetIdx].manuallyResolved = true;
+      }
+
       const sorted = applyTableSort(newTables);
       setCurrentTables(sorted);
       setManualEntryIds(syncManualEntryIds(sorted, baseAssignmentSignatures));
+      persistTischplan(sorted);
     },
     [currentTables, baseResult.tables, baseAssignmentSignatures, applyTableSort]
   );
@@ -466,10 +612,52 @@ export function TischeTab({
   }
 
   const tables = currentTables ?? displayResult.tables;
-  const overfullTableCount = tables.filter(isTableOverfull).length;
+  const overfullTableCount = tables.filter(
+    (t) => isTableOverfull(t) && !t.manuallyResolved
+  ).length;
+
+  const visibleOversizedGroups = displayResult.oversizedGroups.filter((group) => {
+    const entryIds = new Set(group.entries.map((e) => e.id));
+    return tables.some(
+      (t) =>
+        t.entries.some((e) => entryIds.has(e.id)) && !t.manuallyResolved
+    );
+  });
+
+  const visibleOverCapacityEntries = displayResult.overCapacityEntries.filter(
+    (entry) => {
+      const tableIdx = findEntryTableIndex(tables, entry.id);
+      if (tableIdx < 0) return true;
+      return !tables[tableIdx].manuallyResolved;
+    }
+  );
 
   return (
     <div className="space-y-5 animate-fade-in">
+      {planLoadedFromStorage && (
+        <div className="rounded-2xl border border-gold/30 bg-gold/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <p className="text-cream text-xs font-sans flex-1">
+            Gespeicherter Tischplan geladen.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleRecalculate}
+              className="py-2 px-4 rounded-xl border border-gold/20 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
+            >
+              Neu berechnen
+            </button>
+            <button
+              type="button"
+              onClick={handleClearPlan}
+              className="py-2 px-4 rounded-xl border border-gray-500/30 text-gray-400 text-xs font-sans hover:text-cream hover:border-gray-400/50 transition-all"
+            >
+              Plan löschen
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Settings bar */}
       <div className="felt-card rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-end gap-3">
         <div className="flex-1 min-w-[140px]">
@@ -581,9 +769,9 @@ export function TischeTab({
         </div>
       )}
 
-      {displayResult.oversizedGroups.length > 0 && (
+      {visibleOversizedGroups.length > 0 && (
         <div className="rounded-2xl border border-yellow-500/35 bg-yellow-500/10 px-4 py-3 space-y-2">
-          {displayResult.oversizedGroups.map((group, i) => (
+          {visibleOversizedGroups.map((group, i) => (
             <p key={i} className="text-yellow-200/90 text-xs font-sans leading-relaxed">
               <span className="mr-1">⚠</span>
               Gruppe zu groß für einen Tisch:{" "}
@@ -594,9 +782,9 @@ export function TischeTab({
         </div>
       )}
 
-      {displayResult.overCapacityEntries.length > 0 && (
+      {visibleOverCapacityEntries.length > 0 && (
         <div className="rounded-2xl border border-red-500/35 bg-red-500/10 px-4 py-3 space-y-2">
-          {displayResult.overCapacityEntries.map((entry) => (
+          {visibleOverCapacityEntries.map((entry) => (
             <p key={entry.id} className="text-red-300 text-xs font-sans">
               <span className="mr-1">✗</span>
               Einzelne Anmeldung überschreitet Tischkapazität:{" "}

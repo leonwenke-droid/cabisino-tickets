@@ -6,6 +6,7 @@ export type AssignedTable = {
   entries: Entry[];
   seatsUsed: number;
   groupSplit?: boolean;
+  manuallyResolved?: boolean;
 };
 
 export type OversizedGroup = {
@@ -686,6 +687,7 @@ export function cloneTables(tables: AssignedTable[]): AssignedTable[] {
     entries: [...t.entries],
     seatsUsed: t.seatsUsed,
     groupSplit: t.groupSplit,
+    manuallyResolved: t.manuallyResolved,
   }));
 }
 
