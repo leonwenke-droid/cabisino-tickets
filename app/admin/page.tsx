@@ -34,6 +34,8 @@ export default function AdminPage() {
   const [isFetching, setIsFetching] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [scannerActive, setScannerActive] = useState(true);
+  const [lateNightCount, setLateNightCount] = useState(0);
+  const [abibuchCount, setAbibuchCount] = useState(0);
   const lastScannedRef = useRef<string | null>(null);
 
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -78,6 +80,8 @@ export default function AdminPage() {
     setScannerActive(false);
     setIsFetching(true);
     setScanResult(null);
+    setLateNightCount(0);
+    setAbibuchCount(0);
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(trimmed)) {
@@ -124,7 +128,13 @@ export default function AdminPage() {
     setScanResult(null);
     lastScannedRef.current = null;
     setScannerActive(true);
+    setLateNightCount(0);
+    setAbibuchCount(0);
   };
+
+  const confirmationTotal = scanResult?.type === "found"
+    ? scanResult.entry.total_price + lateNightCount * 32 + abibuchCount * 64
+    : 0;
 
   const handleEntrySaved = (updated: Entry) => {
     setEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
@@ -272,13 +282,70 @@ export default function AdminPage() {
 
                     <ScanDetails entry={scanResult.entry} />
 
+                    <div className="felt-card rounded-2xl border border-gold/15 bg-black/20 p-4 mt-4">
+                      <div className="text-cream-muted text-[10px] font-sans uppercase tracking-[0.3em] text-center mb-3">
+                        ── Zusatzartikel ──
+                      </div>
+                      <div className="space-y-3 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 rounded-full border border-gold/15 bg-surface-2 px-2 py-1">
+                            <button
+                              type="button"
+                              onClick={() => setLateNightCount((value) => Math.max(0, value - 1))}
+                              className="h-7 w-7 rounded-full border border-gold/25 bg-black/80 text-gold text-sm font-bold transition hover:bg-gold/10"
+                            >
+                              −
+                            </button>
+                            <span className="min-w-[1.5rem] text-center text-cream font-semibold">{lateNightCount}</span>
+                            <button
+                              type="button"
+                              onClick={() => setLateNightCount((value) => value + 1)}
+                              className="h-7 w-7 rounded-full border border-gold/25 bg-black/80 text-gold text-sm font-bold transition hover:bg-gold/10"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <div className="flex-1 text-cream text-xs leading-tight">
+                            Late Night Ticket · 32 € / Stk
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 rounded-full border border-gold/15 bg-surface-2 px-2 py-1">
+                            <button
+                              type="button"
+                              onClick={() => setAbibuchCount((value) => Math.max(0, value - 1))}
+                              className="h-7 w-7 rounded-full border border-gold/25 bg-black/80 text-gold text-sm font-bold transition hover:bg-gold/10"
+                            >
+                              −
+                            </button>
+                            <span className="min-w-[1.5rem] text-center text-cream font-semibold">{abibuchCount}</span>
+                            <button
+                              type="button"
+                              onClick={() => setAbibuchCount((value) => value + 1)}
+                              className="h-7 w-7 rounded-full border border-gold/25 bg-black/80 text-gold text-sm font-bold transition hover:bg-gold/10"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <div className="flex-1 text-cream text-xs leading-tight">
+                            Abibuch · 64 € / Stk
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between rounded-2xl border border-gold/15 bg-black/40 px-3 py-3">
+                        <span className="text-cream text-sm font-sans">Gesamt</span>
+                        <span className="text-gold font-serif text-lg font-bold">{confirmationTotal} €</span>
+                      </div>
+                    </div>
+
                     <button
                       onClick={() => handleBezahlen(scanResult.entry.id)}
                       disabled={isConfirming}
                       className="w-full mt-4 py-4 rounded-xl gold-gradient text-[#0a0a0f] font-sans font-bold text-base tracking-wide hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 animate-pulse-gold"
                       style={{ boxShadow: "0 6px 30px rgba(201,162,39,0.3)" }}
                     >
-                      {isConfirming ? "Wird bestätigt…" : `✓ Bezahlung bestätigen · ${scanResult.entry.total_price} €`}
+                      {isConfirming ? "Wird bestätigt…" : `✓ Bezahlung bestätigen · ${confirmationTotal} €`}
                     </button>
                     <EntryTicketDownloadFull entry={scanResult.entry} />
                     <button
