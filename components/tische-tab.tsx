@@ -154,6 +154,7 @@ const GLOW_BY_SATISFACTION: Record<TableSatisfaction, string> = {
 
 const CHIP_STYLES: Record<EntryChipStatus, string> = {
   fulfilled: "bg-gold/90 text-[#0a0a0f] border-gold",
+  "nearby-fulfilled": "bg-gold/70 text-[#0a0a0f] border-gold/70",
   neutral: "bg-cream/95 text-[#0a0a0f] border-cream/80",
   conflict: "bg-red-500/90 text-white border-red-400",
 };
@@ -163,12 +164,14 @@ function SeatChip({
   status,
   isManual,
   wishBroken,
+  nearbyIndicator,
   dragHandle,
 }: {
   label: string;
   status: EntryChipStatus;
   isManual?: boolean;
   wishBroken?: boolean;
+  nearbyIndicator?: boolean;
   dragHandle?: React.HTMLAttributes<HTMLSpanElement>;
 }) {
   return (
@@ -177,6 +180,11 @@ function SeatChip({
       className={`relative inline-flex items-center gap-0.5 rounded-full border font-sans font-medium truncate text-[10px] px-2 py-1 max-w-[100px] cursor-grab active:cursor-grabbing touch-none ${CHIP_STYLES[status]}`}
       title={label}
     >
+      {nearbyIndicator && (
+        <span className="text-gold text-[9px] flex-shrink-0" title="Nähe-Wunsch erfüllt">
+          ~
+        </span>
+      )}
       {wishBroken && (
         <span className="text-yellow-400 text-[9px] flex-shrink-0" title="Sitzwunsch nicht mehr erfüllt">
           ⚠
@@ -206,6 +214,7 @@ function DraggableSeatGroup({
   entry,
   table,
   allEntries,
+  allTables,
   unfulfilledWishes,
   overCapacityIds,
   manualEntryIds,
@@ -214,6 +223,7 @@ function DraggableSeatGroup({
   entry: Entry;
   table: AssignedTable;
   allEntries: Entry[];
+  allTables: AssignedTable[];
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"];
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
@@ -231,10 +241,11 @@ function DraggableSeatGroup({
     entry,
     table,
     allEntries,
+    allTables,
     unfulfilledWishes,
     overCapacityIds
   );
-  const wishBroken = entryWishBroken(entry, table, allEntries);
+  const wishBroken = entryWishBroken(entry, table, allEntries, allTables);
   const isManual = manualEntryIds.has(entry.id);
 
   return (
@@ -248,6 +259,7 @@ function DraggableSeatGroup({
         status={status}
         isManual={isManual}
         wishBroken={wishBroken}
+        nearbyIndicator={status === "nearby-fulfilled"}
         dragHandle={{ ...listeners, ...attributes }}
       />
       {guestLabels.length > 0 && (
@@ -271,18 +283,22 @@ function PokerTableCard({
   index,
   table,
   allEntries,
+  allTables,
   unfulfilledWishes,
   overCapacityIds,
   manualEntryIds,
   isDropTarget,
+  showNearbyLinkAfter,
 }: {
   index: number;
   table: AssignedTable;
   allEntries: Entry[];
+  allTables: AssignedTable[];
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"];
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
   isDropTarget?: boolean;
+  showNearbyLinkAfter?: boolean;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `table-${index}` });
 
@@ -297,16 +313,17 @@ function PokerTableCard({
   const manualCount = table.entries.filter((e) => manualEntryIds.has(e.id)).length;
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`relative rounded-[2rem] border-2 p-1 transition-shadow ${
-        overfull
-          ? "border-red-500 shadow-[0_0_32px_rgba(239,68,68,0.35)]"
-          : isOver && isDropTarget
-            ? "border-gold shadow-[0_0_20px_rgba(201,162,39,0.35)]"
-            : `border-gold/50 ${GLOW_BY_SATISFACTION[satisfaction]}`
-      } ${table.groupSplit ? "ring-2 ring-yellow-500/40 ring-offset-1 ring-offset-surface" : ""}`}
-    >
+    <div className="relative">
+      <div
+        ref={setNodeRef}
+        className={`relative rounded-[2rem] border-2 p-1 transition-shadow ${
+          overfull
+            ? "border-red-500 shadow-[0_0_32px_rgba(239,68,68,0.35)]"
+            : isOver && isDropTarget
+              ? "border-gold shadow-[0_0_20px_rgba(201,162,39,0.35)]"
+              : `border-gold/50 ${GLOW_BY_SATISFACTION[satisfaction]}`
+        } ${table.groupSplit ? "ring-2 ring-yellow-500/40 ring-offset-1 ring-offset-surface" : ""}`}
+      >
       <div
         className="relative rounded-[1.75rem] px-4 pt-8 pb-5 min-h-[220px]"
         style={{
@@ -361,6 +378,7 @@ function PokerTableCard({
                 entry={group.entry}
                 table={table}
                 allEntries={allEntries}
+                allTables={allTables}
                 unfulfilledWishes={unfulfilledWishes}
                 overCapacityIds={overCapacityIds}
                 manualEntryIds={manualEntryIds}
@@ -370,6 +388,15 @@ function PokerTableCard({
           })}
         </div>
       </div>
+      </div>
+
+      {showNearbyLinkAfter && (
+        <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 whitespace-nowrap pointer-events-none">
+          <span className="w-8 border-t border-dashed border-gold/50" />
+          <span className="text-[8px] font-sans text-gold/70 px-1">Nähe gewünscht</span>
+          <span className="w-8 border-t border-dashed border-gold/50" />
+        </div>
+      )}
     </div>
   );
 }
@@ -611,7 +638,7 @@ export function TischeTab({
     );
   }
 
-  const tables = currentTables ?? displayResult.tables;
+  const tables = displayResult.tables;
   const overfullTableCount = tables.filter(
     (t) => isTableOverfull(t) && !t.manuallyResolved
   ).length;
@@ -802,6 +829,10 @@ export function TischeTab({
           Wunsch erfüllt
         </span>
         <span className="flex items-center gap-1.5">
+          <span className="text-gold text-xs">~</span>
+          Nähe erfüllt
+        </span>
+        <span className="flex items-center gap-1.5">
           <span className="w-4 h-4 rounded-full bg-cream/95 border border-cream/80" />
           Kein Wunsch
         </span>
@@ -828,10 +859,12 @@ export function TischeTab({
               index={i}
               table={table}
               allEntries={entries}
+              allTables={tables}
               unfulfilledWishes={displayResult.unfulfilledWishes}
               overCapacityIds={overCapacityIds}
               manualEntryIds={manualEntryIds}
               isDropTarget={activeDragId !== null}
+              showNearbyLinkAfter={Boolean(table.nearbyLinkNext)}
             />
           ))}
         </div>
@@ -847,25 +880,55 @@ export function TischeTab({
       </DndContext>
 
       {displayResult.unfulfilledWishes.length > 0 && (
-        <div className="felt-card rounded-2xl p-4 border-red-500/20">
-          <h3 className="font-serif text-sm text-cream mb-3">
-            Nicht erfüllte Wünsche
-          </h3>
-          <ul className="space-y-2">
-            {displayResult.unfulfilledWishes.map((wish, i) => (
-              <li
-                key={`${wish.from.id}-${wish.wanted.id}-${i}`}
-                className="text-xs font-sans text-cream-muted"
-              >
-                <span className="text-red-400/90">✗</span> {wish.reason}
-                {wish.from.sitzwunsch && (
-                  <span className="block text-[10px] text-cream-muted/60 mt-0.5 ml-4">
-                    &bdquo;{wish.from.sitzwunsch}&ldquo;
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
+        <div className="felt-card rounded-2xl p-4 border-red-500/20 space-y-4">
+          {displayResult.unfulfilledWishes.some((w) => w.preferenceType === "same-table") && (
+            <div>
+              <h3 className="font-serif text-sm text-cream mb-3">
+                Wunsch nicht erfüllt
+              </h3>
+              <ul className="space-y-2">
+                {displayResult.unfulfilledWishes
+                  .filter((w) => w.preferenceType === "same-table")
+                  .map((wish, i) => (
+                    <li
+                      key={`same-${wish.from.id}-${wish.wanted.id}-${i}`}
+                      className="text-xs font-sans text-cream-muted"
+                    >
+                      <span className="text-red-400/90">✗</span> {wish.reason}
+                      {wish.from.sitzwunsch && (
+                        <span className="block text-[10px] text-cream-muted/60 mt-0.5 ml-4">
+                          &bdquo;{wish.from.sitzwunsch}&ldquo;
+                        </span>
+                      )}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+          {displayResult.unfulfilledWishes.some((w) => w.preferenceType === "nearby") && (
+            <div>
+              <h3 className="font-serif text-sm text-cream mb-3">
+                Nähe nicht erfüllt
+              </h3>
+              <ul className="space-y-2">
+                {displayResult.unfulfilledWishes
+                  .filter((w) => w.preferenceType === "nearby")
+                  .map((wish, i) => (
+                    <li
+                      key={`nearby-${wish.from.id}-${wish.wanted.id}-${i}`}
+                      className="text-xs font-sans text-cream-muted"
+                    >
+                      <span className="text-yellow-400/90">~</span> {wish.reason}
+                      {wish.from.sitzwunsch && (
+                        <span className="block text-[10px] text-cream-muted/60 mt-0.5 ml-4">
+                          &bdquo;{wish.from.sitzwunsch}&ldquo;
+                        </span>
+                      )}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>
