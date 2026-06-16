@@ -682,27 +682,49 @@ function markNearbyLinkNext(tables: AssignedTable[], links: NearbyTableLink[]): 
   }
 }
 
+export function buildAdjacentNearbyPairKeys(links: NearbyTableLink[]): Set<string> {
+  const pairs = new Set<string>();
+  for (const link of links) {
+    if (link.fulfilled && link.tableIndexB === link.tableIndexA + 1) {
+      pairs.add(`${link.tableIndexA}-${link.tableIndexB}`);
+    }
+  }
+  return pairs;
+}
+
 function optimizeNearbyTableOrder(
   tables: AssignedTable[],
   entries: Entry[],
   ctx: WishContext
 ): AssignedTable[] {
   const result = cloneTables(tables);
+  const maxIterations = Math.max(result.length * result.length, 1);
+  let changed = true;
+  let iterations = 0;
 
-  for (const entry of entries) {
-    for (const target of getNearbyTargets(ctx, entry.id)) {
-      if (isNearbyWishFulfilled(result, entry, target)) continue;
+  while (changed && iterations < maxIterations) {
+    changed = false;
+    iterations++;
 
-      const idxA = findEntryTableIndex(result, entry.id);
-      const idxB = findEntryTableIndex(result, target.id);
-      if (idxA < 0 || idxB < 0 || Math.abs(idxA - idxB) === 1) continue;
+    for (const entry of entries) {
+      for (const target of getNearbyTargets(ctx, entry.id)) {
+        if (entryOnSameTable(result, entry, target)) continue;
+        if (isNearbyWishFulfilled(result, entry, target)) continue;
 
-      const wantIdx = idxA < idxB ? idxA + 1 : idxA - 1;
-      if (wantIdx < 0 || wantIdx >= result.length) continue;
+        const idxA = findEntryTableIndex(result, entry.id);
+        const idxB = findEntryTableIndex(result, target.id);
+        if (idxA < 0 || idxB < 0 || Math.abs(idxA - idxB) === 1) continue;
 
-      const tmp = result[wantIdx];
-      result[wantIdx] = result[idxB];
-      result[idxB] = tmp;
+        const targetPos = idxA < idxB ? idxA + 1 : idxA - 1;
+        if (targetPos < 0 || targetPos >= result.length) continue;
+
+        if (idxB !== targetPos) {
+          const tmp = result[targetPos];
+          result[targetPos] = result[idxB];
+          result[idxB] = tmp;
+          changed = true;
+        }
+      }
     }
   }
 

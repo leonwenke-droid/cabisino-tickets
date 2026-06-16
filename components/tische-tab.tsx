@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -20,10 +20,10 @@ import {
 } from "@/lib/sitzwunsch-types";
 import {
   assignSeats,
-  exportSeatingPlan,
   getTableSatisfaction,
   getEntryChipStatus,
   buildWishContext,
+  buildAdjacentNearbyPairKeys,
   abbreviateName,
   buildSeatGroups,
   formatEntryLabel,
@@ -41,6 +41,7 @@ import {
   type AssignedTable,
   type TableSortMode,
 } from "@/lib/assign-seats";
+import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
 
 const TABLE_COUNT_STORAGE_KEY = "admin_tische_table_count";
 const TABLE_SORT_STORAGE_KEY = "admin_tische_table_sort";
@@ -404,7 +405,6 @@ function PokerTableCard({
   overCapacityIds,
   manualEntryIds,
   isDropTarget,
-  showNearbyLinkAfter,
   aiWishes,
   lowConfidenceIds,
 }: {
@@ -416,7 +416,6 @@ function PokerTableCard({
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
   isDropTarget?: boolean;
-  showNearbyLinkAfter?: boolean;
   aiWishes?: ParsedWish[];
   lowConfidenceIds: Set<string>;
 }) {
@@ -512,14 +511,16 @@ function PokerTableCard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
 
-      {showNearbyLinkAfter && (
-        <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 whitespace-nowrap pointer-events-none">
-          <span className="w-8 border-t border-dashed border-gold/50" />
-          <span className="text-[8px] font-sans text-gold/70 px-1">Nähe gewünscht</span>
-          <span className="w-8 border-t border-dashed border-gold/50" />
-        </div>
-      )}
+function NearbySeparator() {
+  return (
+    <div className="col-span-full flex justify-center py-0.5 -my-2">
+      <span className="inline-flex items-center gap-1 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[11px] font-sans text-gold/65 tracking-wide">
+        <span className="font-bold">~</span> Nähe
+      </span>
     </div>
   );
 }
@@ -755,6 +756,11 @@ export function TischeTab({
     [displayResult.overCapacityEntries]
   );
 
+  const nearbyPairs = useMemo(
+    () => buildAdjacentNearbyPairKeys(displayResult.nearbyTableLinks),
+    [displayResult.nearbyTableLinks]
+  );
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
@@ -809,17 +815,16 @@ export function TischeTab({
     setManualEntryIds(syncManualEntryIds(sorted, baseAssignmentSignatures));
   }, [currentTables, baseAssignmentSignatures, applyTableSort]);
 
-  const handleExport = useCallback(async () => {
-    const text = exportSeatingPlan(displayResult, manualEntryIds);
+  const handleExport = useCallback(() => {
     try {
-      await navigator.clipboard.writeText(text);
-      setExportMsg("Tischplan in Zwischenablage kopiert!");
+      downloadSeatingPlanPdf(displayResult.tables);
+      setExportMsg("Tischplan als PDF heruntergeladen!");
       setTimeout(() => setExportMsg(null), 2500);
     } catch {
-      setExportMsg("Kopieren fehlgeschlagen.");
+      setExportMsg("PDF-Export fehlgeschlagen.");
       setTimeout(() => setExportMsg(null), 2500);
     }
-  }, [displayResult, manualEntryIds]);
+  }, [displayResult.tables]);
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
@@ -1100,20 +1105,21 @@ export function TischeTab({
         {wishesReady ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {tables.map((table, i) => (
-            <PokerTableCard
-              key={i}
-              index={i}
-              table={table}
-              allEntries={entries}
-              allTables={tables}
-              unfulfilledWishes={displayResult.unfulfilledWishes}
-              overCapacityIds={overCapacityIds}
-              manualEntryIds={manualEntryIds}
-              isDropTarget={activeDragId !== null}
-              showNearbyLinkAfter={Boolean(table.nearbyLinkNext)}
-              aiWishes={aiWishes}
-              lowConfidenceIds={lowConfidenceIds}
-            />
+            <Fragment key={`table-${i}`}>
+              <PokerTableCard
+                index={i}
+                table={table}
+                allEntries={entries}
+                allTables={tables}
+                unfulfilledWishes={displayResult.unfulfilledWishes}
+                overCapacityIds={overCapacityIds}
+                manualEntryIds={manualEntryIds}
+                isDropTarget={activeDragId !== null}
+                aiWishes={aiWishes}
+                lowConfidenceIds={lowConfidenceIds}
+              />
+              {nearbyPairs.has(`${i}-${i + 1}`) && <NearbySeparator />}
+            </Fragment>
           ))}
         </div>
         ) : (
