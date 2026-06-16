@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect, Fragment } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -13,17 +13,12 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { Entry } from "@/lib/supabase";
-import type { ParsedWish } from "@/lib/sitzwunsch-types";
-import {
-  collectUnresolvableNames,
-  entryIdsWithLowConfidence,
-} from "@/lib/sitzwunsch-types";
 import {
   assignSeats,
   getTableSatisfaction,
   getEntryChipStatus,
   buildWishContext,
-  buildAdjacentNearbyPairKeys,
+  collectUnresolvableNames,
   abbreviateName,
   buildSeatGroups,
   formatEntryLabel,
@@ -118,7 +113,7 @@ const TABLE_SORT_OPTIONS: { value: TableSortMode; label: string }[] = [
   { value: "seats-desc", label: "Plätze ↓" },
 ];
 
-type WishDotStatus = "none" | "fulfilled" | "nearby" | "unmet" | "conflict";
+type WishDotStatus = "none" | "fulfilled" | "unmet" | "conflict";
 
 function readStoredTableCount(): { input: string; applied?: number } {
   if (typeof window === "undefined") return { input: "" };
@@ -171,8 +166,7 @@ function getWishDotStatus(
   allEntries: Entry[],
   allTables: AssignedTable[],
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"],
-  overCapacityIds: Set<string>,
-  aiWishes?: ParsedWish[]
+  overCapacityIds: Set<string>
 ): WishDotStatus {
   const chipStatus = getEntryChipStatus(
     entry,
@@ -180,15 +174,13 @@ function getWishDotStatus(
     allEntries,
     allTables,
     unfulfilledWishes,
-    overCapacityIds,
-    aiWishes
+    overCapacityIds
   );
   const wish = entry.sitzwunsch?.trim();
 
   if (chipStatus === "conflict") return "conflict";
   if (!wish) return "none";
   if (chipStatus === "fulfilled") return "fulfilled";
-  if (chipStatus === "nearby-fulfilled") return "nearby";
   if (chipStatus === "neutral") return "unmet";
   return "none";
 }
@@ -202,10 +194,7 @@ function WishStatusDot({
 }) {
   const dotSm = "w-2 h-2";
   const dotLg = "w-2.5 h-2.5";
-  const nearbySm = "w-3.5 h-3.5 text-[8px]";
-  const nearbyLg = "w-4 h-4 text-[9px]";
   const dot = size === "lg" ? dotLg : dotSm;
-  const nearby = size === "lg" ? nearbyLg : nearbySm;
 
   switch (status) {
     case "fulfilled":
@@ -214,15 +203,6 @@ function WishStatusDot({
           className={`${dot} rounded-full bg-gold flex-shrink-0`}
           title="Wunsch erfüllt"
         />
-      );
-    case "nearby":
-      return (
-        <span
-          className={`inline-flex items-center justify-center ${nearby} rounded-full bg-yellow-400 flex-shrink-0`}
-          title="Nähe erfüllt"
-        >
-          <span className="font-bold text-[#0a0a0f] leading-none">~</span>
-        </span>
       );
     case "unmet":
       return (
@@ -254,7 +234,6 @@ function PlayerCard({
   sitzwunsch,
   personCount,
   isManual,
-  lowConfidenceNote,
   guestSummary,
   dragHandle,
 }: {
@@ -263,7 +242,6 @@ function PlayerCard({
   sitzwunsch?: string | null;
   personCount?: number;
   isManual?: boolean;
-  lowConfidenceNote?: boolean;
   guestSummary?: string;
   dragHandle?: React.HTMLAttributes<HTMLDivElement>;
 }) {
@@ -302,11 +280,6 @@ function PlayerCard({
             → {truncateSitzwunsch(wishText)}
           </p>
         )}
-        {lowConfidenceNote && (
-          <p className="text-[9px] text-gray-400/80 font-sans mt-1 pl-[18px]">
-            Unsichere Zuordnung
-          </p>
-        )}
       </div>
       {guestSummary && (
         <p
@@ -342,8 +315,6 @@ function DraggableSeatGroup({
   overCapacityIds,
   manualEntryIds,
   guestLabels,
-  aiWishes,
-  lowConfidenceIds,
 }: {
   entry: Entry;
   table: AssignedTable;
@@ -353,8 +324,6 @@ function DraggableSeatGroup({
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
   guestLabels: string[];
-  aiWishes?: ParsedWish[];
-  lowConfidenceIds: Set<string>;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: entry.id,
@@ -370,8 +339,7 @@ function DraggableSeatGroup({
     allEntries,
     allTables,
     unfulfilledWishes,
-    overCapacityIds,
-    aiWishes
+    overCapacityIds
   );
   const isManual = manualEntryIds.has(entry.id);
   const guestSummary = formatGuestSummary(guestLabels);
@@ -388,7 +356,6 @@ function DraggableSeatGroup({
         sitzwunsch={entry.sitzwunsch}
         personCount={entry.total_persons}
         isManual={isManual}
-        lowConfidenceNote={lowConfidenceIds.has(entry.id)}
         guestSummary={guestSummary || undefined}
         dragHandle={{ ...listeners, ...attributes }}
       />
@@ -405,8 +372,6 @@ function PokerTableCard({
   overCapacityIds,
   manualEntryIds,
   isDropTarget,
-  aiWishes,
-  lowConfidenceIds,
 }: {
   index: number;
   table: AssignedTable;
@@ -416,8 +381,6 @@ function PokerTableCard({
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
   isDropTarget?: boolean;
-  aiWishes?: ParsedWish[];
-  lowConfidenceIds: Set<string>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `table-${index}` });
 
@@ -425,7 +388,7 @@ function PokerTableCard({
     table,
     allEntries,
     unfulfilledWishes,
-    aiWishes !== undefined ? buildWishContext(allEntries, aiWishes) : undefined
+    buildWishContext(allEntries)
   );
   const satisfaction =
     table.manuallyResolved &&
@@ -501,11 +464,9 @@ function PokerTableCard({
                   allTables={allTables}
                   unfulfilledWishes={unfulfilledWishes}
                   overCapacityIds={overCapacityIds}
-                  manualEntryIds={manualEntryIds}
-                  guestLabels={group.guestLabels}
-                  aiWishes={aiWishes}
-                  lowConfidenceIds={lowConfidenceIds}
-                />
+                manualEntryIds={manualEntryIds}
+                guestLabels={group.guestLabels}
+              />
               );
             })}
           </div>
@@ -515,20 +476,9 @@ function PokerTableCard({
   );
 }
 
-function NearbySeparator() {
-  return (
-    <div className="col-span-full flex justify-center py-0.5 -my-2">
-      <span className="inline-flex items-center gap-1 rounded-full border border-gold/25 bg-gold/10 px-3 py-1 text-[11px] font-sans text-gold/65 tracking-wide">
-        <span className="font-bold">~</span> Nähe
-      </span>
-    </div>
-  );
-}
-
 function WishLegendBar() {
   const items: { status: WishDotStatus; label: string }[] = [
     { status: "fulfilled", label: "Wunsch erfüllt" },
-    { status: "nearby", label: "Nähe erfüllt" },
     { status: "none", label: "Kein Wunsch" },
     { status: "unmet", label: "Wunsch offen" },
     { status: "conflict", label: "Konflikt" },
@@ -578,98 +528,19 @@ export function TischeTab({
   const [planInitialized, setPlanInitialized] = useState(false);
   const [planLoadedFromStorage, setPlanLoadedFromStorage] = useState(false);
   const [skipBaseResultSync, setSkipBaseResultSync] = useState(false);
-  const [aiWishes, setAiWishes] = useState<ParsedWish[] | undefined>(undefined);
-  const [analyzingWishes, setAnalyzingWishes] = useState(false);
-  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
-  const [analyzeKey, setAnalyzeKey] = useState(0);
 
   const fixedTableCount = appliedTableCount;
 
-  const hasSitzwuensche = useMemo(
-    () => entries.some((e) => e.sitzwunsch?.trim()),
-    [entries]
-  );
-
-  useEffect(() => {
-    if (entries.length === 0) {
-      setAiWishes(undefined);
-      setAnalyzingWishes(false);
-      return;
-    }
-
-    if (!hasSitzwuensche) {
-      setAiWishes([]);
-      setAnalyzingWishes(false);
-      setAnalyzeError(null);
-      return;
-    }
-
-    let cancelled = false;
-    setAnalyzingWishes(true);
-    setAnalyzeError(null);
-    setAiWishes(undefined);
-
-    fetch("/api/analyze-sitzwuensche", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-admin-token": sessionStorage.getItem("admin_auth_token") ?? "",
-      },
-      body: JSON.stringify({ entries }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error || "Analyse fehlgeschlagen");
-        }
-        return res.json();
-      })
-      .then((data: { wishes: ParsedWish[] }) => {
-        if (!cancelled) setAiWishes(data.wishes);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) {
-          setAnalyzeError(err.message);
-          setAiWishes(undefined);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setAnalyzingWishes(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [entries, analyzeKey, hasSitzwuensche]);
-
-  const wishesReady = !analyzingWishes && (aiWishes !== undefined || !hasSitzwuensche);
-
   const baseResult = useMemo(() => {
     void recalcKey;
-    if (!wishesReady) {
-      return {
-        tables: [],
-        unfulfilledWishes: [],
-        oversizedGroups: [],
-        overCapacityEntries: [],
-        nearbyTableLinks: [],
-        stats: { totalWishes: 0, fulfilledWishes: 0, fulfilledPercent: 100 },
-      } satisfies AssignSeatsResult;
-    }
     return assignSeats(entries, {
       ...(fixedTableCount ? { fixedTableCount } : {}),
-      ...(aiWishes !== undefined ? { aiWishes } : {}),
     });
-  }, [entries, recalcKey, fixedTableCount, aiWishes, wishesReady]);
+  }, [entries, recalcKey, fixedTableCount]);
 
   const unresolvableNames = useMemo(
-    () => (aiWishes ? collectUnresolvableNames(aiWishes) : []),
-    [aiWishes]
-  );
-
-  const lowConfidenceIds = useMemo(
-    () => (aiWishes ? entryIdsWithLowConfidence(aiWishes) : new Set<string>()),
-    [aiWishes]
+    () => collectUnresolvableNames(entries),
+    [entries]
   );
 
   useEffect(() => {
@@ -685,11 +556,11 @@ export function TischeTab({
   }, [entries, planInitialized, tableSort]);
 
   useEffect(() => {
-    if (!planInitialized || skipBaseResultSync || !wishesReady) return;
+    if (!planInitialized || skipBaseResultSync) return;
     setCurrentTables(sortTables(cloneTables(baseResult.tables), tableSort));
     setManualEntryIds(new Set());
     setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
-  }, [baseResult, skipBaseResultSync, planInitialized, tableSort, wishesReady]);
+  }, [baseResult, skipBaseResultSync, planInitialized, tableSort]);
 
   useEffect(() => {
     if (!skipBaseResultSync || !currentTables) return;
@@ -735,16 +606,11 @@ export function TischeTab({
 
   const displayResult = useMemo(() => {
     const tables = currentTables ?? baseResult.tables;
-    return buildResultFromTables(
-      entries,
-      tables,
-      {
-        oversizedGroups: baseResult.oversizedGroups,
-        overCapacityEntries: baseResult.overCapacityEntries,
-      },
-      aiWishes
-    );
-  }, [currentTables, baseResult, entries, aiWishes]);
+    return buildResultFromTables(entries, tables, {
+      oversizedGroups: baseResult.oversizedGroups,
+      overCapacityEntries: baseResult.overCapacityEntries,
+    });
+  }, [currentTables, baseResult, entries]);
 
   const totalPersons = useMemo(
     () => entries.reduce((s, e) => s + e.total_persons, 0),
@@ -754,11 +620,6 @@ export function TischeTab({
   const overCapacityIds = useMemo(
     () => new Set(displayResult.overCapacityEntries.map((e) => e.id)),
     [displayResult.overCapacityEntries]
-  );
-
-  const nearbyPairs = useMemo(
-    () => buildAdjacentNearbyPairKeys(displayResult.nearbyTableLinks),
-    [displayResult.nearbyTableLinks]
   );
 
   const sensors = useSensors(
@@ -778,7 +639,6 @@ export function TischeTab({
     setAppliedTableCount(applied);
     persistTableCount(tableCountInput);
     setRecalcKey((k) => k + 1);
-    setAnalyzeKey((k) => k + 1);
   }, [tableCountInput]);
 
   const handleClearPlan = useCallback(() => {
@@ -1049,18 +909,6 @@ export function TischeTab({
         </div>
       )}
 
-      {analyzingWishes && (
-        <div className="rounded-2xl border border-gold/30 bg-gold/10 px-4 py-3 text-cream text-xs font-sans text-center">
-          Analysiere Sitzwünsche…
-        </div>
-      )}
-
-      {analyzeError && !analyzingWishes && (
-        <div className="rounded-2xl border border-orange-500/35 bg-orange-500/10 px-4 py-3 text-orange-200/90 text-xs font-sans">
-          KI-Analyse fehlgeschlagen ({analyzeError}). Es wird die Standard-Zuordnung verwendet.
-        </div>
-      )}
-
       {unresolvableNames.length > 0 && (
         <div className="rounded-2xl border border-yellow-500/35 bg-yellow-500/10 px-4 py-3 text-yellow-200/90 text-xs font-sans leading-relaxed">
           Folgende Namen konnten nicht zugeordnet werden:{" "}
@@ -1102,31 +950,21 @@ export function TischeTab({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        {wishesReady ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
           {tables.map((table, i) => (
-            <Fragment key={`table-${i}`}>
-              <PokerTableCard
-                index={i}
-                table={table}
-                allEntries={entries}
-                allTables={tables}
-                unfulfilledWishes={displayResult.unfulfilledWishes}
-                overCapacityIds={overCapacityIds}
-                manualEntryIds={manualEntryIds}
-                isDropTarget={activeDragId !== null}
-                aiWishes={aiWishes}
-                lowConfidenceIds={lowConfidenceIds}
-              />
-              {nearbyPairs.has(`${i}-${i + 1}`) && <NearbySeparator />}
-            </Fragment>
+            <PokerTableCard
+              key={i}
+              index={i}
+              table={table}
+              allEntries={entries}
+              allTables={tables}
+              unfulfilledWishes={displayResult.unfulfilledWishes}
+              overCapacityIds={overCapacityIds}
+              manualEntryIds={manualEntryIds}
+              isDropTarget={activeDragId !== null}
+            />
           ))}
         </div>
-        ) : (
-          <div className="felt-card rounded-2xl p-8 text-center">
-            <p className="text-cream-muted text-sm font-sans">Analysiere Sitzwünsche…</p>
-          </div>
-        )}
 
         <DragOverlay>
           {activeEntry ? (
@@ -1147,55 +985,25 @@ export function TischeTab({
       <WishLegendBar />
 
       {displayResult.unfulfilledWishes.length > 0 && (
-        <div className="felt-card rounded-2xl p-4 border-red-500/20 space-y-4">
-          {displayResult.unfulfilledWishes.some((w) => w.preferenceType === "same-table") && (
-            <div>
-              <h3 className="font-serif text-sm text-cream mb-3">
-                Wunsch nicht erfüllt
-              </h3>
-              <ul className="space-y-2">
-                {displayResult.unfulfilledWishes
-                  .filter((w) => w.preferenceType === "same-table")
-                  .map((wish, i) => (
-                    <li
-                      key={`same-${wish.from.id}-${wish.wanted.id}-${i}`}
-                      className="text-xs font-sans text-cream-muted"
-                    >
-                      <span className="text-red-400/90">✗</span> {wish.reason}
-                      {wish.from.sitzwunsch && (
-                        <span className="block text-[10px] text-cream-muted/60 mt-0.5 ml-4">
-                          &bdquo;{wish.from.sitzwunsch}&ldquo;
-                        </span>
-                      )}
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
-          {displayResult.unfulfilledWishes.some((w) => w.preferenceType === "nearby") && (
-            <div>
-              <h3 className="font-serif text-sm text-cream mb-3">
-                Nähe nicht erfüllt
-              </h3>
-              <ul className="space-y-2">
-                {displayResult.unfulfilledWishes
-                  .filter((w) => w.preferenceType === "nearby")
-                  .map((wish, i) => (
-                    <li
-                      key={`nearby-${wish.from.id}-${wish.wanted.id}-${i}`}
-                      className="text-xs font-sans text-cream-muted"
-                    >
-                      <span className="text-yellow-400/90">~</span> {wish.reason}
-                      {wish.from.sitzwunsch && (
-                        <span className="block text-[10px] text-cream-muted/60 mt-0.5 ml-4">
-                          &bdquo;{wish.from.sitzwunsch}&ldquo;
-                        </span>
-                      )}
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          )}
+        <div className="felt-card rounded-2xl p-4 border-red-500/20">
+          <h3 className="font-serif text-sm text-cream mb-3">
+            Wunsch nicht erfüllt
+          </h3>
+          <ul className="space-y-2">
+            {displayResult.unfulfilledWishes.map((wish, i) => (
+              <li
+                key={`${wish.from.id}-${wish.wanted.id}-${i}`}
+                className="text-xs font-sans text-cream-muted"
+              >
+                <span className="text-red-400/90">✗</span> {wish.reason}
+                {wish.from.sitzwunsch && (
+                  <span className="block text-[10px] text-cream-muted/60 mt-0.5 ml-4">
+                    &bdquo;{wish.from.sitzwunsch}&ldquo;
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
