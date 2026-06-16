@@ -833,23 +833,20 @@ export function moveEntryToTable(
   entryId: string,
   targetTableIdx: number
 ): AssignedTable[] | null {
+  if (targetTableIdx < 0 || targetTableIdx >= tables.length) return null;
+
+  const sourceIdx = findEntryTableIndex(tables, entryId);
+  if (sourceIdx < 0) return null;
+  if (sourceIdx === targetTableIdx) return cloneTables(tables);
+
   const cloned = cloneTables(tables);
-  let entry: Entry | null = null;
-  let sourceIdx = -1;
+  const entry = cloned[sourceIdx].entries.find((e) => e.id === entryId);
+  if (!entry) return null;
 
-  for (let i = 0; i < cloned.length; i++) {
-    const idx = cloned[i].entries.findIndex((e) => e.id === entryId);
-    if (idx !== -1) {
-      entry = cloned[i].entries[idx];
-      sourceIdx = i;
-      cloned[i].entries.splice(idx, 1);
-      recalcTableSeats(cloned[i]);
-      break;
-    }
-  }
-
-  if (!entry || targetTableIdx < 0 || targetTableIdx >= cloned.length) return null;
-  if (sourceIdx === targetTableIdx) return cloned;
+  cloned[sourceIdx].entries = cloned[sourceIdx].entries.filter(
+    (e) => e.id !== entryId
+  );
+  recalcTableSeats(cloned[sourceIdx]);
 
   cloned[targetTableIdx].entries.push(entry);
   recalcTableSeats(cloned[targetTableIdx]);

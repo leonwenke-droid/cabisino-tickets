@@ -10,6 +10,7 @@ import {
   useDraggable,
   useDroppable,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import type { Entry } from "@/lib/supabase";
@@ -26,6 +27,7 @@ import {
   buildAssignmentSignatures,
   buildResultFromTables,
   moveEntryToTable,
+  canDropEntryOnTableExcluding,
   shuffleNeutralEntries,
   syncManualEntryIds,
   isTableOverfull,
@@ -363,6 +365,15 @@ function DraggableSeatGroup({
   );
 }
 
+function isTableDropId(id: unknown): id is string {
+  return typeof id === "string" && /^table-\d+$/.test(id);
+}
+
+function parseTableDropIndex(id: string): number | null {
+  const idx = parseInt(id.replace("table-", ""), 10);
+  return Number.isFinite(idx) && idx >= 0 ? idx : null;
+}
+
 function PokerTableCard({
   index,
   table,
@@ -371,7 +382,9 @@ function PokerTableCard({
   unfulfilledWishes,
   overCapacityIds,
   manualEntryIds,
-  isDropTarget,
+  dragActive,
+  isHoveredDropTarget,
+  dropAcceptance,
 }: {
   index: number;
   table: AssignedTable;
@@ -380,7 +393,9 @@ function PokerTableCard({
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"];
   overCapacityIds: Set<string>;
   manualEntryIds: Set<string>;
-  isDropTarget?: boolean;
+  dragActive?: boolean;
+  isHoveredDropTarget?: boolean;
+  dropAcceptance?: "valid" | "overfull" | null;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `table-${index}` });
 
@@ -401,24 +416,32 @@ function PokerTableCard({
   const hasIssue = overfull || satisfaction === "conflict";
   const leftStripe = hasIssue ? "border-l-[5px] border-l-red-500" : "";
 
+  const hovered = isOver || isHoveredDropTarget;
+
   return (
     <div className="relative">
       <div
         ref={setNodeRef}
         className={`group relative rounded-2xl border-2 border-gold/40 p-0.5 transition-all duration-300 hover:shadow-[0_0_28px_rgba(201,162,39,0.28)] ${leftStripe} ${
-          isOver && isDropTarget
-            ? "border-gold shadow-[0_0_24px_rgba(201,162,39,0.4)]"
+          dragActive && !hovered
+            ? "animate-pulse border-gold/60 shadow-[0_0_20px_rgba(201,162,39,0.25)]"
             : ""
         } ${table.groupSplit ? "ring-1 ring-yellow-500/30 ring-offset-1 ring-offset-surface" : ""}`}
       >
         <div
-          className="relative rounded-[0.9rem] px-4 pt-4 pb-5 min-h-[280px] flex flex-col"
+          className="relative rounded-[0.9rem] px-4 pt-4 pb-5 min-h-[280px] flex flex-col overflow-hidden"
           style={{
             background:
               "radial-gradient(ellipse 85% 75% at 50% 40%, #1a4d32 0%, #0d2a1a 55%, #081a10 100%)",
             boxShadow: "inset 0 3px 16px rgba(0,0,0,0.45), inset 0 -2px 8px rgba(0,0,0,0.2)",
           }}
         >
+          {hovered && dropAcceptance === "valid" && (
+            <div className="absolute inset-0 rounded-[0.9rem] bg-emerald-500/20 pointer-events-none z-20 ring-2 ring-inset ring-emerald-400/40" />
+          )}
+          {hovered && dropAcceptance === "overfull" && (
+            <div className="absolute inset-0 rounded-[0.9rem] bg-red-500/20 pointer-events-none z-20 ring-2 ring-inset ring-red-400/40" />
+          )}
           <div className="absolute top-3 right-3 flex flex-col items-end gap-1 z-10">
             <span
               className={`text-[11px] font-sans px-2.5 py-1 rounded-full border tabular-nums ${
@@ -525,6 +548,7 @@ export function TischeTab({
     Map<string, string>
   >(new Map());
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
+  const [overDropId, setOverDropId] = useState<string | null>(null);
   const [planInitialized, setPlanInitialized] = useState(false);
   const [planLoadedFromStorage, setPlanLoadedFromStorage] = useState(false);
   const [skipBaseResultSync, setSkipBaseResultSync] = useState(false);
@@ -630,6 +654,33 @@ export function TischeTab({
     ? entries.find((e) => e.id === activeDragId)
     : null;
 
+  const layoutTables = currentTables ?? baseResult.tables;
+
+  const hoveredTableIdx = useMemo(() => {
+    if (!isTableDropId(overDropId)) return null;
+    return parseTableDropIndex(overDropId);
+  }, [overDropId]);
+
+  const isOverValidTable = isTableDropId(overDropId);
+
+  const getDropAcceptance = useCallback(
+    (tableIdx: number): "valid" | "overfull" | null => {
+      if (!activeDragId || hoveredTableIdx !== tableIdx) return null;
+      const entry = entries.find((e) => e.id === activeDragId);
+      if (!entry || tableIdx >= layoutTables.length) return null;
+      const sourceIdx = findEntryTableIndex(layoutTables, activeDragId);
+      return canDropEntryOnTableExcluding(
+        layoutTables,
+        tableIdx,
+        entry,
+        sourceIdx
+      )
+        ? "valid"
+        : "overfull";
+    },
+    [activeDragId, hoveredTableIdx, entries, layoutTables]
+  );
+
   const handleRecalculate = useCallback(() => {
     clearPersistedTischplan();
     setSkipBaseResultSync(false);
@@ -688,19 +739,34 @@ export function TischeTab({
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
+    setOverDropId(null);
+  }, []);
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const nextOver = event.over?.id;
+    setOverDropId(nextOver != null ? String(nextOver) : null);
   }, []);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDragId(null);
+      setOverDropId(null);
 
       const entryId = String(event.active.id);
-      const overId = event.over?.id;
-      if (!overId || !String(overId).startsWith("table-")) return;
+      const overRaw = event.over?.id;
 
-      const targetIdx = parseInt(String(overId).replace("table-", ""), 10);
+      if (!overRaw || !isTableDropId(overRaw)) {
+        return;
+      }
+
+      const targetIdx = parseTableDropIndex(overRaw);
+      if (targetIdx === null) return;
+
       const tables = currentTables ?? baseResult.tables;
+      if (targetIdx >= tables.length) return;
+
       const sourceIdx = findEntryTableIndex(tables, entryId);
+      if (sourceIdx === targetIdx) return;
 
       const newTables = moveEntryToTable(tables, entryId, targetIdx);
       if (!newTables) return;
@@ -720,6 +786,7 @@ export function TischeTab({
 
   const handleDragCancel = useCallback(() => {
     setActiveDragId(null);
+    setOverDropId(null);
   }, []);
 
   if (isLoading) {
@@ -947,6 +1014,7 @@ export function TischeTab({
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
@@ -961,14 +1029,22 @@ export function TischeTab({
               unfulfilledWishes={displayResult.unfulfilledWishes}
               overCapacityIds={overCapacityIds}
               manualEntryIds={manualEntryIds}
-              isDropTarget={activeDragId !== null}
+              dragActive={activeDragId !== null}
+              isHoveredDropTarget={overDropId === `table-${i}`}
+              dropAcceptance={getDropAcceptance(i)}
             />
           ))}
         </div>
 
         <DragOverlay>
           {activeEntry ? (
-            <div className="w-[180px] shadow-2xl rotate-2">
+            <div
+              className={`w-[180px] shadow-2xl rotate-2 transition-all ${
+                !isOverValidTable
+                  ? "ring-2 ring-red-500/60 opacity-90 cursor-not-allowed"
+                  : ""
+              }`}
+            >
               <PlayerCard
                 label={abbreviateName(activeEntry)}
                 wishDotStatus={
