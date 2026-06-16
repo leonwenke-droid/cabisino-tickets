@@ -36,6 +36,7 @@ export default function AdminPage() {
   const [scannerActive, setScannerActive] = useState(true);
   const [lateNightCount, setLateNightCount] = useState(0);
   const [abibuchCount, setAbibuchCount] = useState(0);
+  const [givenAmount, setGivenAmount] = useState(0);
   const lastScannedRef = useRef<string | null>(null);
 
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -82,6 +83,7 @@ export default function AdminPage() {
     setScanResult(null);
     setLateNightCount(0);
     setAbibuchCount(0);
+    setGivenAmount(0);
 
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (!uuidRegex.test(trimmed)) {
@@ -130,6 +132,7 @@ export default function AdminPage() {
     setScannerActive(true);
     setLateNightCount(0);
     setAbibuchCount(0);
+    setGivenAmount(0);
   };
 
   const confirmationTotal = scanResult?.type === "found"
@@ -339,6 +342,12 @@ export default function AdminPage() {
                       </div>
                     </div>
 
+                    <CashRegisterSection
+                      total={confirmationTotal}
+                      givenAmount={givenAmount}
+                      onGivenChange={setGivenAmount}
+                    />
+
                     <button
                       onClick={() => handleBezahlen(scanResult.entry.id)}
                       disabled={isConfirming}
@@ -347,6 +356,11 @@ export default function AdminPage() {
                     >
                       {isConfirming ? "Wird bestätigt…" : `✓ Bezahlung bestätigen · ${confirmationTotal} €`}
                     </button>
+                    {givenAmount < confirmationTotal && (
+                      <p className="text-center text-orange-400/80 text-xs font-sans mt-2">
+                        Betrag noch nicht vollständig
+                      </p>
+                    )}
                     <EntryTicketDownloadFull entry={scanResult.entry} />
                     <button
                       type="button"
@@ -544,6 +558,162 @@ export default function AdminPage() {
           onSaved={handleEntrySaved}
         />
       )}
+    </div>
+  );
+}
+
+function formatEuro(amount: number): string {
+  if (Number.isInteger(amount)) return `${amount} €`;
+  return `${amount.toFixed(2).replace(".", ",")} €`;
+}
+
+const BILL_DENOMINATIONS = [5, 10, 20, 50, 100, 200] as const;
+const COIN_DENOMINATIONS = [0.5, 1, 2] as const;
+
+function CashRegisterSection({
+  total,
+  givenAmount,
+  onGivenChange,
+}: {
+  total: number;
+  givenAmount: number;
+  onGivenChange: (amount: number) => void;
+}) {
+  const [manualInput, setManualInput] = useState("");
+
+  const change = Math.round((givenAmount - total) * 100) / 100;
+  const isExact = givenAmount >= total && change === 0;
+  const isShort = givenAmount < total;
+  const hasChange = givenAmount > total;
+
+  const addDenomination = (amount: number) => {
+    onGivenChange(Math.round((givenAmount + amount) * 100) / 100);
+    setManualInput("");
+  };
+
+  const resetGiven = () => {
+    onGivenChange(0);
+    setManualInput("");
+  };
+
+  const handleManualInput = (raw: string) => {
+    setManualInput(raw);
+    const normalized = raw.trim().replace(",", ".");
+    if (normalized === "") {
+      onGivenChange(0);
+      return;
+    }
+    const parsed = parseFloat(normalized);
+    if (!Number.isNaN(parsed) && parsed >= 0) {
+      onGivenChange(Math.round(parsed * 100) / 100);
+    }
+  };
+
+  return (
+    <div className="felt-card rounded-2xl border border-gold/15 bg-black/20 p-4 mt-4">
+      <div className="text-gold text-[10px] font-sans uppercase tracking-[0.3em] text-center mb-4">
+        Kassieren
+      </div>
+
+      <div className="space-y-2 mb-4">
+        <div className="grid grid-cols-4 gap-2">
+          {BILL_DENOMINATIONS.slice(0, 4).map((amount) => (
+            <button
+              key={amount}
+              type="button"
+              onClick={() => addDenomination(amount)}
+              className="min-h-[52px] rounded-xl border border-gold/35 bg-[#3d2e0a]/80 text-gold font-sans font-semibold text-sm active:scale-[0.97] transition-transform hover:bg-gold/15 hover:border-gold/50"
+            >
+              {formatEuro(amount)}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-5 gap-2">
+          {BILL_DENOMINATIONS.slice(4).map((amount) => (
+            <button
+              key={amount}
+              type="button"
+              onClick={() => addDenomination(amount)}
+              className="min-h-[52px] rounded-xl border border-gold/35 bg-[#3d2e0a]/80 text-gold font-sans font-semibold text-sm active:scale-[0.97] transition-transform hover:bg-gold/15 hover:border-gold/50"
+            >
+              {formatEuro(amount)}
+            </button>
+          ))}
+          {COIN_DENOMINATIONS.map((amount) => (
+            <button
+              key={amount}
+              type="button"
+              onClick={() => addDenomination(amount)}
+              className="min-h-[44px] rounded-xl border border-gold/20 bg-gold/10 text-gold/80 font-sans font-medium text-xs active:scale-[0.97] transition-transform hover:bg-gold/15 hover:border-gold/35"
+            >
+              {formatEuro(amount)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gold/15 bg-black/40 px-4 py-4 space-y-3">
+        <div className="flex items-center justify-between text-sm font-sans">
+          <span className="text-cream-muted">Zu zahlen:</span>
+          <span className="text-cream font-semibold tabular-nums">{formatEuro(total)}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm font-sans gap-2">
+          <span className="text-cream-muted">Gegeben:</span>
+          <div className="flex items-center gap-2">
+            <span
+              className={`font-semibold tabular-nums ${
+                isShort && givenAmount > 0 ? "text-red-400" : "text-cream"
+              }`}
+            >
+              {formatEuro(givenAmount)}
+            </span>
+            <button
+              type="button"
+              onClick={resetGiven}
+              className="text-cream-muted/70 hover:text-cream text-xs font-sans transition-colors"
+            >
+              ← Löschen
+            </button>
+          </div>
+        </div>
+        <div className="border-t border-gold/15 pt-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-cream-muted text-sm font-sans">Rückgeld:</span>
+            <div className="flex items-center gap-2">
+              {isExact && (
+                <span className="text-[10px] uppercase tracking-wide text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full font-sans">
+                  Passend!
+                </span>
+              )}
+              <span
+                className={`font-serif font-bold tabular-nums ${
+                  isShort
+                    ? "text-cream-muted text-xl"
+                    : isExact
+                      ? "text-emerald-400 text-2xl"
+                      : "text-gold text-3xl"
+                }`}
+                style={hasChange ? { textShadow: "0 0 24px rgba(201,162,39,0.45)" } : undefined}
+              >
+                {isShort ? "—" : formatEuro(change)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <label className="flex items-center gap-2 mt-3 text-sm font-sans text-cream-muted">
+        <span className="flex-shrink-0">Oder Betrag eingeben:</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          value={manualInput}
+          onChange={(e) => handleManualInput(e.target.value)}
+          placeholder="0"
+          className="input-dark flex-1 rounded-lg px-3 py-2 text-sm text-cream outline-none tabular-nums"
+        />
+        <span className="text-cream-muted flex-shrink-0">€</span>
+      </label>
     </div>
   );
 }
