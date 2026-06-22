@@ -43,7 +43,8 @@ import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place
 
 const TABLE_COUNT_STORAGE_KEY = "admin_tische_table_count";
 const TABLE_SORT_STORAGE_KEY = "admin_tische_table_sort";
-const TISCHPLAN_STORAGE_KEY = "kabisino-tischplan";
+const TISCHPLAN_STORAGE_KEY = "cabisino-tischplan";
+const LEGACY_TISCHPLAN_STORAGE_KEY = "kabisino-tischplan";
 
 type PersistedTable = {
   entryIds: string[];
@@ -88,6 +89,20 @@ function persistTischplan(tables: AssignedTable[]) {
 function clearPersistedTischplan() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(TISCHPLAN_STORAGE_KEY);
+  localStorage.removeItem(LEGACY_TISCHPLAN_STORAGE_KEY);
+}
+
+function readTischplanStorageRaw(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = localStorage.getItem(TISCHPLAN_STORAGE_KEY);
+  if (raw) return raw;
+  const legacy = localStorage.getItem(LEGACY_TISCHPLAN_STORAGE_KEY);
+  if (legacy) {
+    localStorage.setItem(TISCHPLAN_STORAGE_KEY, legacy);
+    localStorage.removeItem(LEGACY_TISCHPLAN_STORAGE_KEY);
+    return legacy;
+  }
+  return null;
 }
 
 function createEmptyAssignedTables(count: number): AssignedTable[] {
@@ -99,7 +114,7 @@ function createEmptyAssignedTables(count: number): AssignedTable[] {
 
 function loadPersistedTischplan(entries: Entry[]): AssignedTable[] | null {
   if (typeof window === "undefined" || entries.length === 0) return null;
-  const raw = localStorage.getItem(TISCHPLAN_STORAGE_KEY);
+  const raw = readTischplanStorageRaw();
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as PersistedTischplan;

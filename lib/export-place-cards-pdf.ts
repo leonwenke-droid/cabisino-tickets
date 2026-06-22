@@ -55,25 +55,52 @@ function placeCardZipFilename(card: PlaceCardData): string {
   return `tisch-${card.tableNumber}-${vorname}-${nachname}.jpg`;
 }
 
+function createOrnamentalDivider(
+  widthPercent: number,
+  accent: string,
+  accentSizePx: number
+): HTMLDivElement {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = `display:flex;align-items:center;justify-content:center;width:${widthPercent}%;margin:0 auto;gap:${Math.round(accentSizePx * 0.45)}px`;
+
+  const lineStyle = `flex:1;height:2px;background:linear-gradient(90deg,transparent,${GOLD},transparent)`;
+
+  const left = document.createElement("div");
+  left.style.cssText = lineStyle;
+
+  const center = document.createElement("span");
+  center.textContent = accent;
+  center.style.cssText = `font-size:${accentSizePx}px;color:${GOLD};opacity:0.55;line-height:1;user-select:none`;
+
+  const right = document.createElement("div");
+  right.style.cssText = lineStyle;
+
+  wrap.append(left, center, right);
+  return wrap;
+}
+
 function createPlaceCardElement(
   card: PlaceCardData,
   widthPx: number,
   heightPx: number
 ): HTMLDivElement {
   const lineCount = 1 + card.guestNames.length;
-  const mainSize =
+  const baseMain =
     lineCount <= 2 ? 36 : lineCount <= 4 ? 30 : lineCount <= 6 ? 26 : 22;
-  const guestSize = mainSize - 6;
+  const mainSize = Math.round(baseMain * 1.3);
+  const guestSize = Math.round((baseMain - 6) * 1.2);
   const tableSize = lineCount <= 4 ? 64 : 54;
-  const suitSize = Math.round(heightPx * 0.028);
+  const suitSize = Math.round(heightPx * 0.034);
+  const ornamentSize = Math.round(heightPx * 0.016);
   const labelSize = Math.round(heightPx * 0.012);
   const footerSize = Math.round(heightPx * 0.011);
   const borderPx = Math.round(widthPx * 0.005);
   const padX = Math.round(widthPx * 0.08);
-  const padTop = Math.round(heightPx * 0.07);
+  const padTop = Math.round(heightPx * 0.065);
   const padBottom = Math.round(heightPx * 0.06);
   const suitInset = Math.round(widthPx * 0.06);
   const footerOffset = Math.round(heightPx * 0.1);
+  const nameLineGap = Math.round(mainSize * 0.18);
 
   const el = document.createElement("div");
   el.style.cssText = [
@@ -102,7 +129,7 @@ function createPlaceCardElement(
   suits.forEach((suit, i) => {
     const span = document.createElement("span");
     span.textContent = suit;
-    span.style.cssText = `position:absolute;${suitPositions[i]};font-size:${suitSize}px;color:${GOLD};opacity:0.28;user-select:none;line-height:1`;
+    span.style.cssText = `position:absolute;${suitPositions[i]};font-size:${suitSize}px;color:${GOLD};opacity:0.4;user-select:none;line-height:1`;
     el.appendChild(span);
   });
 
@@ -117,32 +144,56 @@ function createPlaceCardElement(
   tableNum.textContent = `Tisch ${card.tableNumber}`;
   tableNum.style.cssText = `margin:0;font-size:${tableSize}px;font-weight:700;color:${GOLD};line-height:1.05`;
 
-  const divider = document.createElement("div");
-  divider.style.cssText = `width:68%;height:2px;margin:18px auto 0;background:linear-gradient(90deg,transparent,${GOLD},transparent)`;
+  const headerDivider = createOrnamentalDivider(68, "♦", ornamentSize);
+  headerDivider.style.marginTop = "16px";
 
-  top.append(label, tableNum, divider);
+  const suitRow = document.createElement("div");
+  suitRow.style.cssText = `display:flex;justify-content:center;gap:${Math.round(ornamentSize * 1.1)}px;margin-top:14px`;
+  (["♠", "♥", "♦", "♣"] as const).forEach((suit) => {
+    const span = document.createElement("span");
+    span.textContent = suit;
+    span.style.cssText = `font-size:${ornamentSize}px;color:${GOLD};opacity:0.22;line-height:1;user-select:none`;
+    suitRow.append(span);
+  });
+
+  top.append(label, tableNum, headerDivider, suitRow);
 
   const names = document.createElement("div");
-  names.style.cssText = `text-align:center;width:100%;flex:1;display:flex;flex-direction:column;justify-content:center;gap:${Math.round(mainSize * 0.35)}px;min-height:0;padding:12px 0`;
+  names.style.cssText = [
+    `position:absolute`,
+    `top:40%`,
+    `left:${padX}px`,
+    `right:${padX}px`,
+    `transform:translateY(-50%)`,
+    `text-align:center`,
+    `display:flex`,
+    `flex-direction:column`,
+    `align-items:center`,
+    `gap:${nameLineGap}px`,
+  ].join(";");
 
   const main = document.createElement("p");
   main.textContent = `${card.vorname} ${card.nachname}`;
-  main.style.cssText = `margin:0;font-size:${mainSize}px;font-weight:700;color:${CREAM};line-height:1.2;word-break:break-word`;
+  main.style.cssText = `margin:0;font-size:${mainSize}px;font-weight:700;color:${CREAM};line-height:1.15;word-break:break-word`;
 
   names.append(main);
 
   for (const guest of card.guestNames) {
     const guestEl = document.createElement("p");
     guestEl.textContent = guest;
-    guestEl.style.cssText = `margin:0;font-size:${guestSize}px;font-weight:400;color:${CREAM};opacity:0.92;line-height:1.25;word-break:break-word`;
+    guestEl.style.cssText = `margin:0;font-size:${guestSize}px;font-weight:400;color:${CREAM};opacity:0.92;line-height:1.12;word-break:break-word`;
     names.append(guestEl);
   }
 
+  const bottomDivider = createOrnamentalDivider(62, "♠", ornamentSize);
+  bottomDivider.style.marginTop = `${Math.round(nameLineGap * 1.4)}px`;
+  names.append(bottomDivider);
+
   const footer = document.createElement("div");
-  footer.style.cssText = "text-align:center;width:100%;flex-shrink:0";
+  footer.style.cssText = "text-align:center;width:100%;flex-shrink:0;margin-top:auto";
 
   const footerText = document.createElement("p");
-  footerText.innerHTML = `Kabisino 2026 <span style="opacity:0.7">♠</span>`;
+  footerText.innerHTML = `Cabisino 2026 <span style="opacity:0.7">♠</span>`;
   footerText.style.cssText = `margin:0;font-size:${footerSize}px;letter-spacing:0.14em;color:${CREAM_MUTED};font-family:'DM Sans',system-ui,sans-serif`;
 
   footer.append(footerText);
@@ -201,7 +252,7 @@ async function renderCardJpeg(
 
 export async function downloadPlaceCardsPdf(
   tables: AssignedTable[],
-  filename = "kabisino-platzkarten.pdf"
+  filename = "cabisino-platzkarten.pdf"
 ): Promise<void> {
   const cards = collectPlaceCards(tables);
   if (cards.length === 0) {
@@ -235,7 +286,7 @@ export async function downloadPlaceCardsPdf(
 
 export async function downloadPlaceCardsZip(
   tables: AssignedTable[],
-  filename = "kabisino-platzkarten.zip"
+  filename = "cabisino-platzkarten.zip"
 ): Promise<void> {
   const cards = collectPlaceCards(tables);
   if (cards.length === 0) {

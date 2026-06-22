@@ -80,7 +80,7 @@ function drawFooter(doc: jsPDF, pageNum: number, totalPages: number) {
   setText(doc, COLORS.guest);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
-  doc.text("Kabisino 2026 · Tischplan", pageW / 2, PAGE.footerY, { align: "center" });
+  doc.text("Cabisino 2026 · Tischplan", pageW / 2, PAGE.footerY, { align: "center" });
   doc.text(`${pageNum} / ${totalPages}`, pageW - margin, PAGE.footerY, { align: "right" });
 }
 
@@ -136,7 +136,7 @@ function drawTableCard(
   }
 }
 
-export function downloadSeatingPlanPdf(tables: AssignedTable[], filename = "kabisino-tischplan.pdf") {
+export function downloadSeatingPlanPdf(tables: AssignedTable[], filename = "cabisino-tischplan.pdf") {
   if (tables.length === 0) {
     throw new Error("Keine Tische zum Exportieren.");
   }
