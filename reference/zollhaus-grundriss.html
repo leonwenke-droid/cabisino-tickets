@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Zollhaus Grundriss</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #ffffff;
+    font-family: system-ui, -apple-system, sans-serif;
+    padding: 20px;
+  }
+  .floorplan-wrap {
+    width: 100%;
+    max-width: 1400px;
+    margin: 0 auto;
+    overflow-x: auto;
+  }
+  svg { width: 100%; height: auto; display: block; }
+
+  .table { cursor: pointer; transition: opacity 0.15s; }
+  .table:hover { opacity: 0.8; }
+  .table-octagon {
+    fill: #5b7fa6;
+    stroke: #3d5876;
+    stroke-width: 2;
+  }
+  .table-num {
+    fill: #ffffff;
+    font-size: 15px;
+    font-weight: 600;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+  }
+  .wall { fill: none; stroke: #111; stroke-width: 6; }
+  .wall-thin { fill: none; stroke: #111; stroke-width: 3; }
+  .door-arc { fill: none; stroke: #111; stroke-width: 1.5; }
+  .furniture { fill: #5b7fa6; stroke: #3d5876; stroke-width: 1.5; }
+  .stair-line { stroke: #111; stroke-width: 1; }
+</style>
+</head>
+<body>
+<div class="floorplan-wrap">
+<svg viewBox="0 0 1800 1280" xmlns="http://www.w3.org/2000/svg">
+
+  <!-- ===================== OUTER WALLS ===================== -->
+  <!-- Top wall of main hall (slightly angled like the original) -->
+  <path class="wall" d="M 60 360 L 1260 350 L 1740 345"/>
+  <!-- Right wall -->
+  <path class="wall" d="M 1740 345 L 1745 760"/>
+  <!-- Bottom wall right portion -->
+  <path class="wall" d="M 1745 760 L 1080 765"/>
+  <!-- Bottom wall left portion -->
+  <path class="wall" d="M 760 765 L 60 770"/>
+  <!-- Left wall of hall -->
+  <path class="wall" d="M 60 360 L 60 770"/>
+
+  <!-- ===================== LEFT ANTEROOM ===================== -->
+  <path class="wall-thin" d="M 30 340 L 110 340 L 110 460"/>
+  <path class="wall-thin" d="M 30 460 L 30 600"/>
+  <path class="wall-thin" d="M 30 600 L 110 600 L 110 720"/>
+  <path class="wall-thin" d="M 30 720 L 110 720"/>
+  <!-- diagonal entry line -->
+  <path class="wall-thin" d="M 110 360 L 210 460"/>
+  <!-- speaker / icon boxes (red outlines in original) -->
+  <rect x="62" y="540" width="40" height="40" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+  <rect x="30" y="600" width="20" height="30" fill="none" stroke="#c0392b" stroke-width="1.5"/>
+  <circle cx="48" cy="420" r="7" fill="#e8c34a"/>
+  <circle cx="48" cy="525" r="7" fill="#e8c34a"/>
+
+  <!-- ===================== CENTRAL STAIRCASE ===================== -->
+  <g>
+    <rect x="830" y="650" width="130" height="115" fill="none" class="wall-thin"/>
+    <!-- stair treads -->
+    <line class="stair-line" x1="865" y1="660" x2="865" y2="755"/>
+    <line class="stair-line" x1="880" y1="660" x2="880" y2="755"/>
+    <line class="stair-line" x1="895" y1="660" x2="895" y2="755"/>
+    <line class="stair-line" x1="910" y1="660" x2="910" y2="755"/>
+    <line class="stair-line" x1="925" y1="660" x2="925" y2="755"/>
+    <line class="stair-line" x1="940" y1="660" x2="940" y2="755"/>
+    <circle cx="850" cy="668" r="4" fill="none" stroke="#111" stroke-width="1"/>
+    <circle cx="850" cy="745" r="4" fill="none" stroke="#111" stroke-width="1"/>
+  </g>
+
+  <!-- ===================== LOWER CENTRAL VESTIBULE (double doors) ===================== -->
+  <g>
+    <path class="wall-thin" d="M 945 765 L 945 960 L 1070 960 L 1070 765"/>
+    <!-- door opening bottom -->
+    <line class="wall" x1="985" y1="960" x2="1035" y2="960"/>
+    <!-- door swing -->
+    <path class="door-arc" d="M 960 850 Q 1010 850 1010 900"/>
+    <line class="door-arc" x1="960" y1="850" x2="1010" y2="900"/>
+  </g>
+
+  <!-- right side door arc (entry top right) -->
+  <path class="door-arc" d="M 1745 430 Q 1700 460 1700 500"/>
+
+  <!-- ===================== LEFT TABLE BLOCK ===================== -->
+  <!-- Coordinates read from the Zollhaus floor plan. Octagon radius ~38. -->
+
+  <!-- Row A (top) -->
+  <g class="table"><polygon class="table-octagon" points="318,382 348,382 369,403 369,433 348,454 318,454 297,433 297,403"/><text class="table-num" x="333" y="418">3</text></g>
+  <g class="table"><polygon class="table-octagon" points="430,382 460,382 481,403 481,433 460,454 430,454 409,433 409,403"/><text class="table-num" x="445" y="418">4</text></g>
+  <g class="table"><polygon class="table-octagon" points="540,388 570,388 591,409 591,439 570,460 540,460 519,439 519,409"/><text class="table-num" x="555" y="424">13</text></g>
+  <g class="table"><polygon class="table-octagon" points="648,388 678,388 699,409 699,439 678,460 648,460 627,439 627,409"/><text class="table-num" x="663" y="424">14</text></g>
+  <g class="table"><polygon class="table-octagon" points="762,392 792,392 813,413 813,443 792,464 762,464 741,443 741,413"/><text class="table-num" x="777" y="428">23</text></g>
+
+  <!-- Row B (second) -->
+  <g class="table"><polygon class="table-octagon" points="268,468 298,468 319,489 319,519 298,540 268,540 247,519 247,489"/><text class="table-num" x="283" y="504">2</text></g>
+  <g class="table"><polygon class="table-octagon" points="378,468 408,468 429,489 429,519 408,540 378,540 357,519 357,489"/><text class="table-num" x="393" y="504">5</text></g>
+  <g class="table"><polygon class="table-octagon" points="488,470 518,470 539,491 539,521 518,542 488,542 467,521 467,491"/><text class="table-num" x="503" y="506">12</text></g>
+  <g class="table"><polygon class="table-octagon" points="598,470 628,470 649,491 649,521 628,542 598,542 577,521 577,491"/><text class="table-num" x="613" y="506">15</text></g>
+  <g class="table"><polygon class="table-octagon" points="708,474 738,474 759,495 759,525 738,546 708,546 687,525 687,495"/><text class="table-num" x="723" y="510">22</text></g>
+
+  <!-- Row C (third) -->
+  <g class="table"><polygon class="table-octagon" points="218,552 248,552 269,573 269,603 248,624 218,624 197,603 197,573"/><text class="table-num" x="233" y="588">1</text></g>
+  <g class="table"><polygon class="table-octagon" points="330,552 360,552 381,573 381,603 360,624 330,624 309,603 309,573"/><text class="table-num" x="345" y="588">6</text></g>
+  <g class="table"><polygon class="table-octagon" points="440,552 470,552 491,573 491,603 470,624 440,624 419,603 419,573"/><text class="table-num" x="455" y="588">11</text></g>
+  <g class="table"><polygon class="table-octagon" points="550,552 580,552 601,573 601,603 580,624 550,624 529,603 529,573"/><text class="table-num" x="565" y="588">16</text></g>
+  <g class="table"><polygon class="table-octagon" points="660,556 690,556 711,577 711,607 690,628 660,628 639,607 639,577"/><text class="table-num" x="675" y="592">21</text></g>
+
+  <!-- Row D (fourth) -->
+  <g class="table"><polygon class="table-octagon" points="268,636 298,636 319,657 319,687 298,708 268,708 247,687 247,657"/><text class="table-num" x="283" y="672">7</text></g>
+  <g class="table"><polygon class="table-octagon" points="380,636 410,636 431,657 431,687 410,708 380,708 359,687 359,657"/><text class="table-num" x="395" y="672">10</text></g>
+  <g class="table"><polygon class="table-octagon" points="490,638 520,638 541,659 541,689 520,710 490,710 469,689 469,659"/><text class="table-num" x="505" y="674">17</text></g>
+  <g class="table"><polygon class="table-octagon" points="600,638 630,638 651,659 651,689 630,710 600,710 579,689 579,659"/><text class="table-num" x="615" y="674">20</text></g>
+
+  <!-- Row E (bottom) -->
+  <g class="table"><polygon class="table-octagon" points="218,700 248,700 269,721 269,751 248,772 218,772 197,751 197,721"/><text class="table-num" x="233" y="736">8</text></g>
+  <g class="table"><polygon class="table-octagon" points="330,700 360,700 381,721 381,751 360,772 330,772 309,751 309,721"/><text class="table-num" x="345" y="736">9</text></g>
+  <g class="table"><polygon class="table-octagon" points="440,702 470,702 491,723 491,753 470,774 440,774 419,753 419,723"/><text class="table-num" x="455" y="738">18</text></g>
+  <g class="table"><polygon class="table-octagon" points="550,702 580,702 601,723 601,753 580,774 550,774 529,753 529,723"/><text class="table-num" x="565" y="738">19</text></g>
+  <g class="table"><polygon class="table-octagon" points="660,704 690,704 711,725 711,755 690,776 660,776 639,755 639,725"/><text class="table-num" x="675" y="740">28</text></g>
+
+  <!-- ===================== CENTER-TOP SINGLES (24, 31) ===================== -->
+  <g class="table"><polygon class="table-octagon" points="878,394 908,394 929,415 929,445 908,466 878,466 857,445 857,415"/><text class="table-num" x="893" y="430">24</text></g>
+  <g class="table"><polygon class="table-octagon" points="988,396 1018,396 1039,417 1039,447 1018,468 988,468 967,447 967,417"/><text class="table-num" x="1003" y="432">31</text></g>
+
+  <!-- ===================== RIGHT TABLE BLOCK ===================== -->
+  <!-- Row A (top) -->
+  <g class="table"><polygon class="table-octagon" points="1098,398 1128,398 1149,419 1149,449 1128,470 1098,470 1077,449 1077,419"/><text class="table-num" x="1113" y="434">32</text></g>
+  <g class="table"><polygon class="table-octagon" points="1208,400 1238,400 1259,421 1259,451 1238,472 1208,472 1187,451 1187,421"/><text class="table-num" x="1223" y="436">37</text></g>
+  <g class="table"><polygon class="table-octagon" points="1318,400 1348,400 1369,421 1369,451 1348,472 1318,472 1297,451 1297,421"/><text class="table-num" x="1333" y="436">38</text></g>
+  <g class="table"><polygon class="table-octagon" points="1428,402 1458,402 1479,423 1479,453 1458,474 1428,474 1407,453 1407,423"/><text class="table-num" x="1443" y="438">47</text></g>
+  <g class="table"><polygon class="table-octagon" points="1538,402 1568,402 1589,423 1589,453 1568,474 1538,474 1517,453 1517,423"/><text class="table-num" x="1553" y="438">48</text></g>
+
+  <!-- Row B (second) -->
+  <g class="table"><polygon class="table-octagon" points="1158,484 1188,484 1209,505 1209,535 1188,556 1158,556 1137,535 1137,505"/><text class="table-num" x="1173" y="520">36</text></g>
+  <g class="table"><polygon class="table-octagon" points="1268,486 1298,486 1319,507 1319,537 1298,558 1268,558 1247,537 1247,507"/><text class="table-num" x="1283" y="522">39</text></g>
+  <g class="table"><polygon class="table-octagon" points="1378,486 1408,486 1429,507 1429,537 1408,558 1378,558 1357,537 1357,507"/><text class="table-num" x="1393" y="522">46</text></g>
+  <g class="table"><polygon class="table-octagon" points="1488,488 1518,488 1539,509 1539,539 1518,560 1488,560 1467,539 1467,509"/><text class="table-num" x="1503" y="524">49</text></g>
+
+  <!-- Row C (third) -->
+  <g class="table"><polygon class="table-octagon" points="1208,560 1238,560 1259,581 1259,611 1238,632 1208,632 1187,611 1187,581"/><text class="table-num" x="1223" y="596">40</text></g>
+  <g class="table"><polygon class="table-octagon" points="1318,562 1348,562 1369,583 1369,613 1348,634 1318,634 1297,613 1297,583"/><text class="table-num" x="1333" y="598">45</text></g>
+  <g class="table"><polygon class="table-octagon" points="1428,562 1458,562 1479,583 1479,613 1458,634 1428,634 1407,613 1407,583"/><text class="table-num" x="1443" y="598">50</text></g>
+
+  <!-- furniture rectangle near 46/49/50 -->
+  <rect class="furniture" x="1545" y="540" width="55" height="100" rx="2"/>
+
+  <!-- Row D (fourth) -->
+  <g class="table"><polygon class="table-octagon" points="1158,640 1188,640 1209,661 1209,691 1188,712 1158,712 1137,691 1137,661"/><text class="table-num" x="1173" y="676">41</text></g>
+  <g class="table"><polygon class="table-octagon" points="1268,642 1298,642 1319,663 1319,693 1298,714 1268,714 1247,693 1247,663"/><text class="table-num" x="1283" y="678">44</text></g>
+  <g class="table"><polygon class="table-octagon" points="1378,642 1408,642 1429,663 1429,693 1408,714 1378,714 1357,693 1357,663"/><text class="table-num" x="1393" y="678">51</text></g>
+  <g class="table"><polygon class="table-octagon" points="1488,644 1518,644 1539,665 1539,695 1518,716 1488,716 1467,695 1467,665"/><text class="table-num" x="1503" y="680">54</text></g>
+  <!-- table 60 isolated far right -->
+  <g class="table"><polygon class="table-octagon" points="1648,602 1678,602 1699,623 1699,653 1678,674 1648,674 1627,653 1627,623"/><text class="table-num" x="1663" y="638">60</text></g>
+
+  <!-- Row E (bottom) -->
+  <g class="table"><polygon class="table-octagon" points="1108,706 1138,706 1159,727 1159,757 1138,778 1108,778 1087,757 1087,727"/><text class="table-num" x="1123" y="742">42</text></g>
+  <g class="table"><polygon class="table-octagon" points="1218,708 1248,708 1269,729 1269,759 1248,780 1218,780 1197,759 1197,729"/><text class="table-num" x="1233" y="744">43</text></g>
+  <g class="table"><polygon class="table-octagon" points="1328,708 1358,708 1379,729 1379,759 1358,780 1328,780 1307,759 1307,729"/><text class="table-num" x="1343" y="744">52</text></g>
+  <g class="table"><polygon class="table-octagon" points="1438,710 1468,710 1489,731 1489,761 1468,782 1438,782 1417,761 1417,731"/><text class="table-num" x="1453" y="746">53</text></g>
+  <g class="table"><polygon class="table-octagon" points="1548,710 1578,710 1599,731 1599,761 1578,782 1548,782 1527,761 1527,731"/><text class="table-num" x="1563" y="746">58</text></g>
+  <g class="table"><polygon class="table-octagon" points="1648,710 1678,710 1699,731 1699,761 1678,782 1648,782 1627,761 1627,731"/><text class="table-num" x="1663" y="746">59</text></g>
+
+</svg>
+</div>
+</body>
+</html>

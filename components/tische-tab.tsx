@@ -36,7 +36,7 @@ import {
   type AssignedTable,
 } from "@/lib/assign-seats";
 import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
-import { ZollhausFloorplanView } from "@/components/zollhaus-floorplan-view";
+import { Floorplan } from "@/components/floorplan";
 import {
   ZOLLHAUS_TABLE_COUNT,
   formatZollhausTableLabel,
@@ -1075,7 +1075,7 @@ export function TischeTab({
         </DragOverlay>
       </DndContext>
       ) : (
-        <ZollhausFloorplanView
+        <Floorplan
           tables={tables}
           allEntries={entries}
           unfulfilledWishes={displayResult.unfulfilledWishes}
