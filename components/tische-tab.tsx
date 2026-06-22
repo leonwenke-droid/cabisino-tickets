@@ -32,6 +32,7 @@ import {
   syncManualEntryIds,
   isTableOverfull,
   findEntryTableIndex,
+  swapTableAssignments,
   type AssignSeatsResult,
   type AssignedTable,
 } from "@/lib/assign-seats";
@@ -785,6 +786,24 @@ export function TischeTab({
     setOverDropId(null);
   }, []);
 
+  const handleSwapTables = useCallback(
+    (indexA: number, indexB: number) => {
+      if (indexA === indexB) return;
+
+      const tables = currentTables ?? baseResult.tables;
+      const newTables = swapTableAssignments(tables, indexA, indexB);
+      if (!newTables) return;
+
+      newTables[indexA].manuallyResolved = true;
+      newTables[indexB].manuallyResolved = true;
+
+      setCurrentTables(cloneTables(newTables));
+      setManualEntryIds(syncManualEntryIds(newTables, baseAssignmentSignatures));
+      persistTischplan(newTables);
+    },
+    [currentTables, baseResult.tables, baseAssignmentSignatures]
+  );
+
   if (isLoading) {
     return (
       <div className="felt-card rounded-2xl p-8 text-center animate-fade-in">
@@ -1079,6 +1098,7 @@ export function TischeTab({
           tables={tables}
           allEntries={entries}
           unfulfilledWishes={displayResult.unfulfilledWishes}
+          onSwapTables={handleSwapTables}
         />
       )}
 

@@ -1,8 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  TouchSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 import type { Entry } from "@/lib/supabase";
 import {
+  abbreviateName,
   buildSeatGroups,
   buildWishContext,
   formatEntryLabel,
@@ -11,7 +25,10 @@ import {
   type AssignSeatsResult,
   type AssignedTable,
 } from "@/lib/assign-seats";
-import { TABLE_POLYGONS } from "@/lib/floorplan-table-polygons";
+import {
+  TABLE_POLYGONS,
+  type TablePolygon,
+} from "@/lib/floorplan-table-polygons";
 import {
   ZOLLHAUS_FIRST_TABLE,
   ZOLLHAUS_TABLE_NUMBERS,
@@ -21,6 +38,11 @@ import {
 
 /** Show roped-off tables 1–20 as faint outlines on the plan. */
 export const SHOW_UNUSED_TABLES = true;
+
+const VIEWBOX = { w: 1800, h: 1280 };
+
+const OCTAGON_CLIP =
+  "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)";
 
 const COLORS = {
   gold: "#C9A227",
@@ -38,13 +60,31 @@ const COLORS = {
   partialStroke: "#a07d15",
 };
 
-function isUsableTableNumber(tableNumber: number): boolean {
-  return tableNumber >= ZOLLHAUS_FIRST_TABLE;
+function floorplanTableId(tableIdx: number): string {
+  return `fp-table-${tableIdx}`;
+}
+
+function parseFloorplanTableId(id: unknown): number | null {
+  if (typeof id !== "string" || !/^fp-table-\d+$/.test(id)) return null;
+  const idx = parseInt(id.replace("fp-table-", ""), 10);
+  return Number.isFinite(idx) && idx >= 0 ? idx : null;
 }
 
 function tableNumberToIndex(tableNumber: number): number | null {
   const idx = ZOLLHAUS_TABLE_NUMBERS.indexOf(tableNumber);
   return idx >= 0 ? idx : null;
+}
+
+function isUsableTableNumber(tableNumber: number): boolean {
+  return tableNumber >= ZOLLHAUS_FIRST_TABLE;
+}
+
+function getPrimaryGroupLabel(
+  table: AssignedTable | null,
+  tableNumber: number
+): string {
+  if (!table || table.entries.length === 0) return `Tisch ${tableNumber}`;
+  return abbreviateName(table.entries[0]);
 }
 
 function getTableColors(
@@ -238,6 +278,127 @@ function FloorplanStaticLayers() {
   );
 }
 
+function FloorplanTablePolygon({
+  tableNumber,
+  poly,
+  colors,
+  isDragging,
+  isDropTarget,
+  isDimmed,
+  isSwapSource,
+}: {
+  tableNumber: number;
+  poly: TablePolygon;
+  colors: ReturnType<typeof getTableColors>;
+  isDragging?: boolean;
+  isDropTarget?: boolean;
+  isDimmed?: boolean;
+  isSwapSource?: boolean;
+}) {
+  const stroke = isDropTarget || isSwapSource ? COLORS.gold : colors.stroke;
+  const strokeWidth = isDropTarget || isSwapSource ? 4 : isDragging ? 3 : 2;
+  const opacity = isDimmed ? 0.6 : isDragging ? 0.35 : 1;
+  const transform =
+    isDragging || isDropTarget
+      ? `translate(${poly.tx} ${poly.ty}) scale(${isDropTarget ? 1.08 : 1.1}) translate(${-poly.tx} ${-poly.ty})`
+      : undefined;
+
+  return (
+    <g transform={transform} style={{ transition: "opacity 0.15s" }}>
+      <polygon
+        points={poly.points}
+        fill={colors.fill}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
+        strokeDasharray={
+          tableNumber < ZOLLHAUS_FIRST_TABLE ? "4 3" : undefined
+        }
+        opacity={opacity}
+        style={
+          isDragging
+            ? { filter: "drop-shadow(0 4px 12px rgba(201,162,39,0.55))" }
+            : isDropTarget
+              ? { filter: "drop-shadow(0 0 10px rgba(201,162,39,0.85))" }
+              : undefined
+        }
+      />
+      <text
+        x={poly.tx}
+        y={poly.ty}
+        fill={colors.textFill}
+        fontSize={15}
+        fontWeight={600}
+        textAnchor="middle"
+        dominantBaseline="central"
+        pointerEvents="none"
+        opacity={opacity}
+        fontFamily="system-ui, -apple-system, sans-serif"
+      >
+        {tableNumber}
+      </text>
+    </g>
+  );
+}
+
+function FloorplanTableHitArea({
+  tableIdx,
+  tableNumber,
+  poly,
+  swapMode,
+  disabled,
+  isDropTarget,
+  onTap,
+}: {
+  tableIdx: number;
+  tableNumber: number;
+  poly: TablePolygon;
+  swapMode: boolean;
+  disabled?: boolean;
+  isDropTarget?: boolean;
+  onTap: () => void;
+}) {
+  const id = floorplanTableId(tableIdx);
+  const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
+    useDraggable({
+      id,
+      disabled: disabled || swapMode,
+    });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id });
+
+  const setRef = useCallback(
+    (node: HTMLButtonElement | null) => {
+      setDragRef(node);
+      setDropRef(node);
+    },
+    [setDragRef, setDropRef]
+  );
+
+  const showTargetRing = isDropTarget || isOver;
+
+  return (
+    <button
+      type="button"
+      ref={setRef}
+      className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full touch-none ${
+        swapMode ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"
+      } ${showTargetRing ? "ring-2 ring-gold animate-pulse-gold scale-110 z-20" : "z-10"} ${
+        isDragging ? "opacity-0" : ""
+      }`}
+      style={{
+        left: `${(poly.tx / VIEWBOX.w) * 100}%`,
+        top: `${(poly.ty / VIEWBOX.h) * 100}%`,
+        width: "4.8%",
+        minWidth: 48,
+        aspectRatio: "1",
+        clipPath: OCTAGON_CLIP,
+      }}
+      onClick={onTap}
+      aria-label={`Tisch ${tableNumber}`}
+      {...(swapMode ? {} : { ...listeners, ...attributes })}
+    />
+  );
+}
+
 function TableDetailModal({
   tableIndex,
   table,
@@ -356,16 +517,90 @@ function TableDetailModal({
   );
 }
 
+function SwapConfirmDialog({
+  tableIndexA,
+  tableIndexB,
+  tables,
+  onConfirm,
+  onCancel,
+}: {
+  tableIndexA: number;
+  tableIndexB: number;
+  tables: AssignedTable[];
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const tableA = tables[tableIndexA];
+  const tableB = tables[tableIndexB];
+  const numA = ZOLLHAUS_TABLE_NUMBERS[tableIndexA];
+  const numB = ZOLLHAUS_TABLE_NUMBERS[tableIndexB];
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      onClick={onCancel}
+      role="presentation"
+    >
+      <div
+        className="felt-card w-full max-w-sm rounded-2xl border border-gold/30 p-5 shadow-2xl animate-fade-in"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
+        <h3 className="font-serif text-lg text-gold mb-2">Tische tauschen?</h3>
+        <p className="text-cream-muted text-sm font-sans mb-4">
+          Tisch {numA} ({getPrimaryGroupLabel(tableA, numA)}) und Tisch {numB} (
+          {getPrimaryGroupLabel(tableB, numB)}) komplett tauschen?
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-2 rounded-xl text-sm font-sans text-cream-muted hover:text-cream border border-gold/20"
+          >
+            Abbrechen
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="px-4 py-2 rounded-xl text-sm font-sans bg-gold/20 text-gold border border-gold/40 hover:bg-gold/30"
+          >
+            Tauschen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Floorplan({
   tables,
   allEntries,
   unfulfilledWishes,
+  onSwapTables,
 }: {
   tables: AssignedTable[];
   allEntries: Entry[];
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"];
+  onSwapTables: (indexA: number, indexB: number) => void;
 }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [swapMode, setSwapMode] = useState(false);
+  const [swapSourceIdx, setSwapSourceIdx] = useState<number | null>(null);
+  const [swapPending, setSwapPending] = useState<{
+    a: number;
+    b: number;
+  } | null>(null);
+  const [activeDragIdx, setActiveDragIdx] = useState<number | null>(null);
+  const [overDropIdx, setOverDropIdx] = useState<number | null>(null);
+  const skipTapAfterDragRef = useRef(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 200, tolerance: 8 },
+    })
+  );
 
   const tableNumbers = useMemo(
     () =>
@@ -375,115 +610,269 @@ export function Floorplan({
     []
   );
 
+  const interactiveTables = useMemo(
+    () =>
+      tableNumbers
+        .map((tableNumber) => {
+          const tableIdx = tableNumberToIndex(tableNumber);
+          const poly = TABLE_POLYGONS[tableNumber];
+          if (!poly || tableIdx === null || !isUsableTableNumber(tableNumber)) {
+            return null;
+          }
+          return { tableNumber, tableIdx, poly };
+        })
+        .filter((t): t is NonNullable<typeof t> => t !== null),
+    [tableNumbers]
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSelectedIndex(null);
+      if (e.key === "Escape") {
+        setSelectedIndex(null);
+        setSwapPending(null);
+        setSwapSourceIdx(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    if (!swapMode) {
+      setSwapSourceIdx(null);
+      setSwapPending(null);
+    }
+  }, [swapMode]);
+
+  const commitSwap = useCallback(
+    (indexA: number, indexB: number) => {
+      if (indexA === indexB) return;
+      onSwapTables(indexA, indexB);
+      setSwapSourceIdx(null);
+      setSwapPending(null);
+    },
+    [onSwapTables]
+  );
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const idx = parseFloorplanTableId(event.active.id);
+    setActiveDragIdx(idx);
+    setOverDropIdx(null);
+    setSelectedIndex(null);
+  }, []);
+
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const idx = event.over ? parseFloorplanTableId(event.over.id) : null;
+    setOverDropIdx(idx);
+  }, []);
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const sourceIdx = parseFloorplanTableId(event.active.id);
+      const targetIdx = event.over ? parseFloorplanTableId(event.over.id) : null;
+
+      setActiveDragIdx(null);
+      setOverDropIdx(null);
+
+      if (sourceIdx === null || targetIdx === null || sourceIdx === targetIdx) {
+        skipTapAfterDragRef.current = sourceIdx !== null;
+        window.setTimeout(() => {
+          skipTapAfterDragRef.current = false;
+        }, 120);
+        return;
+      }
+
+      skipTapAfterDragRef.current = true;
+      window.setTimeout(() => {
+        skipTapAfterDragRef.current = false;
+      }, 120);
+
+      commitSwap(sourceIdx, targetIdx);
+    },
+    [commitSwap]
+  );
+
+  const handleDragCancel = useCallback(() => {
+    setActiveDragIdx(null);
+    setOverDropIdx(null);
+    skipTapAfterDragRef.current = true;
+    window.setTimeout(() => {
+      skipTapAfterDragRef.current = false;
+    }, 120);
+  }, []);
+
+  const handleTableTap = useCallback(
+    (tableIdx: number) => {
+      if (skipTapAfterDragRef.current) return;
+
+      if (swapMode) {
+        if (swapSourceIdx === null) {
+          setSwapSourceIdx(tableIdx);
+          return;
+        }
+        if (swapSourceIdx === tableIdx) {
+          setSwapSourceIdx(null);
+          return;
+        }
+        setSwapPending({ a: swapSourceIdx, b: tableIdx });
+        return;
+      }
+      setSelectedIndex(tableIdx);
+    },
+    [swapMode, swapSourceIdx]
+  );
+
   const selectedTable =
     selectedIndex !== null ? tables[selectedIndex] ?? null : null;
 
+  const dragTable =
+    activeDragIdx !== null ? tables[activeDragIdx] ?? null : null;
+  const dragTableNumber =
+    activeDragIdx !== null ? ZOLLHAUS_TABLE_NUMBERS[activeDragIdx] : null;
+
+  const isDragActive = activeDragIdx !== null;
+
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto rounded-2xl border border-gold/25 bg-[#f8f6f0] touch-pan-x">
-        <svg
-          viewBox="0 0 1800 1280"
-          xmlns="http://www.w3.org/2000/svg"
-          width="100%"
-          className="block min-w-[720px] h-auto"
-          role="img"
-          aria-label="Zollhaus Grundriss"
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={() => setSwapMode((v) => !v)}
+          className={`px-3 py-1.5 rounded-xl text-xs font-sans border transition-colors ${
+            swapMode
+              ? "bg-gold/20 text-gold border-gold/50"
+              : "text-cream-muted border-gold/20 hover:text-cream hover:border-gold/35"
+          }`}
         >
-          <FloorplanStaticLayers />
-
-          {tableNumbers.map((tableNumber) => {
-            const poly = TABLE_POLYGONS[tableNumber];
-            if (!poly) return null;
-
-            const tableIdx = tableNumberToIndex(tableNumber);
-            const assignedTable =
-              tableIdx !== null ? tables[tableIdx] ?? null : null;
-            const colors = getTableColors(
-              tableNumber,
-              isUsableTableNumber(tableNumber) ? assignedTable : null,
-              allEntries,
-              tables,
-              unfulfilledWishes
-            );
-
-            if (colors.fill === "transparent" && colors.stroke === "transparent") {
-              return null;
-            }
-
-            const handleClick = () => {
-              if (!colors.interactive || tableIdx === null) return;
-              setSelectedIndex(tableIdx);
-            };
-
-            return (
-              <g
-                key={tableNumber}
-                className={colors.interactive ? "cursor-pointer" : undefined}
-                onClick={handleClick}
-                style={
-                  colors.interactive
-                    ? { transition: "opacity 0.15s" }
-                    : undefined
-                }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleClick();
-                  }
-                }}
-                role={colors.interactive ? "button" : undefined}
-                tabIndex={colors.interactive ? 0 : undefined}
-                aria-label={
-                  colors.interactive
-                    ? `Tisch ${tableNumber}`
-                    : `Tisch ${tableNumber} gesperrt`
-                }
-              >
-                <polygon
-                  points={poly.points}
-                  fill={colors.fill}
-                  stroke={colors.stroke}
-                  strokeWidth={2}
-                  strokeDasharray={
-                    tableNumber < ZOLLHAUS_FIRST_TABLE ? "4 3" : undefined
-                  }
-                  style={
-                    colors.interactive
-                      ? { opacity: 1 }
-                      : undefined
-                  }
-                  className={colors.interactive ? "hover:opacity-80" : undefined}
-                />
-                <text
-                  x={poly.tx}
-                  y={poly.ty}
-                  fill={colors.textFill}
-                  fontSize={15}
-                  fontWeight={600}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  pointerEvents="none"
-                  fontFamily="system-ui, -apple-system, sans-serif"
-                >
-                  {tableNumber}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
+          {swapMode ? "Tauschen-Modus aktiv" : "Tauschen-Modus"}
+        </button>
+        {swapMode && (
+          <p className="text-cream-muted/70 text-[11px] font-sans">
+            {swapSourceIdx === null
+              ? "Ersten Tisch antippen"
+              : "Zweiten Tisch antippen zum Tauschen"}
+          </p>
+        )}
       </div>
 
+      <DndContext
+        sensors={sensors}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        <div className="overflow-x-auto rounded-2xl border border-gold/25 bg-[#f8f6f0] touch-pan-x">
+          <div className="relative min-w-[720px]">
+            <svg
+              viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
+              xmlns="http://www.w3.org/2000/svg"
+              width="100%"
+              className="block h-auto"
+              role="img"
+              aria-label="Zollhaus Grundriss"
+            >
+              <FloorplanStaticLayers />
+
+              {tableNumbers.map((tableNumber) => {
+                const poly = TABLE_POLYGONS[tableNumber];
+                if (!poly) return null;
+
+                const tableIdx = tableNumberToIndex(tableNumber);
+                const assignedTable =
+                  tableIdx !== null ? tables[tableIdx] ?? null : null;
+                const colors = getTableColors(
+                  tableNumber,
+                  isUsableTableNumber(tableNumber) ? assignedTable : null,
+                  allEntries,
+                  tables,
+                  unfulfilledWishes
+                );
+
+                if (
+                  colors.fill === "transparent" &&
+                  colors.stroke === "transparent"
+                ) {
+                  return null;
+                }
+
+                const isDragging =
+                  tableIdx !== null && activeDragIdx === tableIdx;
+                const isDropTarget =
+                  tableIdx !== null &&
+                  overDropIdx === tableIdx &&
+                  activeDragIdx !== tableIdx;
+                const isDimmed =
+                  isDragActive &&
+                  tableIdx !== null &&
+                  tableIdx !== activeDragIdx &&
+                  tableIdx !== overDropIdx;
+                const isSwapSource =
+                  swapMode && tableIdx !== null && swapSourceIdx === tableIdx;
+
+                return (
+                  <FloorplanTablePolygon
+                    key={tableNumber}
+                    tableNumber={tableNumber}
+                    poly={poly}
+                    colors={colors}
+                    isDragging={isDragging}
+                    isDropTarget={isDropTarget}
+                    isDimmed={isDimmed}
+                    isSwapSource={isSwapSource}
+                  />
+                );
+              })}
+            </svg>
+
+            <div className="absolute inset-0 pointer-events-none">
+              {interactiveTables.map(({ tableNumber, tableIdx, poly }) => (
+                <div key={tableNumber} className="pointer-events-auto">
+                  <FloorplanTableHitArea
+                    tableIdx={tableIdx}
+                    tableNumber={tableNumber}
+                    poly={poly}
+                    swapMode={swapMode}
+                    disabled={isDragActive && activeDragIdx !== tableIdx}
+                    isDropTarget={
+                      overDropIdx === tableIdx && activeDragIdx !== tableIdx
+                    }
+                    onTap={() => handleTableTap(tableIdx)}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <DragOverlay dropAnimation={null}>
+          {dragTable && dragTableNumber !== null && activeDragIdx !== null ? (
+            <div className="pointer-events-none flex flex-col items-center gap-1.5">
+              <div
+                className="w-14 h-14 flex items-center justify-center bg-[#5b7fa6] border-2 border-gold shadow-[0_8px_24px_rgba(201,162,39,0.45)] scale-110"
+                style={{ clipPath: OCTAGON_CLIP }}
+              >
+                <span className="font-sans font-bold text-white text-sm tabular-nums">
+                  {dragTableNumber}
+                </span>
+              </div>
+              <span className="text-xs font-sans bg-surface-2/95 text-gold px-2.5 py-1 rounded-full border border-gold/40 shadow-lg whitespace-nowrap max-w-[200px] truncate">
+                {getPrimaryGroupLabel(dragTable, dragTableNumber)}
+              </span>
+              {overDropIdx !== null && overDropIdx !== activeDragIdx && (
+                <span className="text-[10px] font-sans text-gold bg-black/85 px-2 py-0.5 rounded border border-gold/30">
+                  ⇄ Tauschen
+                </span>
+              )}
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+
       <p className="text-cream-muted/70 text-[11px] font-sans text-center">
-        Gold = Wunsch erfüllt · Blau = kein Wunsch · Gelb = offen · Rot =
-        Konflikt · Tisch antippen für Details · Verschieben nur in Raster-Ansicht
+        Tisch ziehen und auf anderen Tisch legen zum Tauschen · Oder
+        Tauschen-Modus für Touch · Antippen für Details · Raster-Ansicht für
+        Einzelplätze
       </p>
 
       {selectedTable && selectedIndex !== null && (
@@ -493,6 +882,19 @@ export function Floorplan({
           allEntries={allEntries}
           unfulfilledWishes={unfulfilledWishes}
           onClose={() => setSelectedIndex(null)}
+        />
+      )}
+
+      {swapPending && (
+        <SwapConfirmDialog
+          tableIndexA={swapPending.a}
+          tableIndexB={swapPending.b}
+          tables={tables}
+          onConfirm={() => commitSwap(swapPending.a, swapPending.b)}
+          onCancel={() => {
+            setSwapPending(null);
+            setSwapSourceIdx(null);
+          }}
         />
       )}
     </div>

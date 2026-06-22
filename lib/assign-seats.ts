@@ -860,6 +860,37 @@ export function moveEntryToTable(
   return cloned;
 }
 
+/** Swap full group assignments between two tables (positions/numbers stay fixed). */
+export function swapTableAssignments(
+  tables: AssignedTable[],
+  indexA: number,
+  indexB: number
+): AssignedTable[] | null {
+  if (indexA < 0 || indexB < 0 || indexA >= tables.length || indexB >= tables.length) {
+    return null;
+  }
+  if (indexA === indexB) return cloneTables(tables);
+
+  const cloned = cloneTables(tables);
+  const a = cloned[indexA];
+  const b = cloned[indexB];
+
+  cloned[indexA] = {
+    entries: [...b.entries],
+    seatsUsed: b.seatsUsed,
+    groupSplit: b.groupSplit,
+    manuallyResolved: b.manuallyResolved,
+  };
+  cloned[indexB] = {
+    entries: [...a.entries],
+    seatsUsed: a.seatsUsed,
+    groupSplit: a.groupSplit,
+    manuallyResolved: a.manuallyResolved,
+  };
+
+  return cloned;
+}
+
 export function fisherYatesShuffle<T>(arr: T[]): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
