@@ -36,13 +36,16 @@ import {
   type AssignedTable,
 } from "@/lib/assign-seats";
 import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
-import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place-cards-pdf";
+import { ZollhausFloorplanView } from "@/components/zollhaus-floorplan-view";
 import {
   ZOLLHAUS_TABLE_COUNT,
   formatZollhausTableLabel,
   getMaxVenueCapacity,
   getTableCapacityForDisplay,
 } from "@/lib/zollhaus-tables";
+import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place-cards-pdf";
+
+type TischeViewMode = "grid" | "floorplan";
 
 const TISCHPLAN_STORAGE_KEY = "cabisino-tischplan";
 const LEGACY_TISCHPLAN_STORAGE_KEY = "kabisino-tischplan";
@@ -543,6 +546,7 @@ export function TischeTab({
   const [planInitialized, setPlanInitialized] = useState(false);
   const [planLoadedFromStorage, setPlanLoadedFromStorage] = useState(false);
   const [skipBaseResultSync, setSkipBaseResultSync] = useState(false);
+  const [viewMode, setViewMode] = useState<TischeViewMode>("grid");
 
   const baseResult = useMemo(() => {
     void recalcKey;
@@ -998,6 +1002,32 @@ export function TischeTab({
         </div>
       )}
 
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setViewMode("grid")}
+          className={`py-2 px-4 rounded-xl border text-xs font-sans transition-all ${
+            viewMode === "grid"
+              ? "border-gold/50 text-gold bg-gold/10"
+              : "border-gold/20 text-cream-muted hover:text-cream hover:border-gold/40"
+          }`}
+        >
+          Raster-Ansicht
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("floorplan")}
+          className={`py-2 px-4 rounded-xl border text-xs font-sans transition-all ${
+            viewMode === "floorplan"
+              ? "border-gold/50 text-gold bg-gold/10"
+              : "border-gold/20 text-cream-muted hover:text-cream hover:border-gold/40"
+          }`}
+        >
+          Grundriss-Ansicht
+        </button>
+      </div>
+
+      {viewMode === "grid" ? (
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -1044,6 +1074,13 @@ export function TischeTab({
           ) : null}
         </DragOverlay>
       </DndContext>
+      ) : (
+        <ZollhausFloorplanView
+          tables={tables}
+          allEntries={entries}
+          unfulfilledWishes={displayResult.unfulfilledWishes}
+        />
+      )}
 
       <WishLegendBar />
 
