@@ -18,10 +18,13 @@ import {
 } from "@/lib/zollhaus-tables";
 import {
   FLOOR_ROOM_ASPECT,
+  OTHER_ELEMENTS,
   ROPE_OFF_REGIONS,
   STAIRCASE_REGION,
   getFloorplanTableMarkers,
+  getRopedTableMarkers,
   type FloorRegion,
+  type OtherElement,
 } from "@/lib/zollhaus-floorplan";
 
 const OCTAGON_CLIP =
@@ -113,6 +116,36 @@ function tableStatusStyle(
     fill: "bg-surface-2/80",
     text: "text-cream-muted",
   };
+}
+
+function FurnitureElement({ element }: { element: OtherElement }) {
+  return (
+    <div
+      className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+      style={{
+        left: `${element.x}%`,
+        top: `${element.y}%`,
+        width: `${element.w}%`,
+        height: `${element.h}%`,
+      }}
+    >
+      <div className="w-full h-full rounded-sm bg-gray-600/35 border border-gray-500/40" />
+    </div>
+  );
+}
+
+function RopedTableOctagon({ tableNumber }: { tableNumber: number }) {
+  return (
+    <div
+      className="w-[clamp(1.75rem,3.6vw,2.75rem)] h-[clamp(1.75rem,3.6vw,2.75rem)] ring-1 ring-dashed ring-gray-500/45 bg-gray-900/25 opacity-50"
+      style={{ clipPath: OCTAGON_CLIP }}
+      aria-hidden
+    >
+      <span className="flex items-center justify-center w-full h-full text-[clamp(0.5rem,1vw,0.65rem)] font-sans text-gray-500/70 tabular-nums">
+        {tableNumber}
+      </span>
+    </div>
+  );
 }
 
 function FloorplanTableOctagon({
@@ -292,6 +325,7 @@ export function ZollhausFloorplanView({
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const markers = useMemo(() => getFloorplanTableMarkers(), []);
+  const ropedMarkers = useMemo(() => getRopedTableMarkers(), []);
   const wishCtx = useMemo(() => buildWishContext(allEntries), [allEntries]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -321,17 +355,34 @@ export function ZollhausFloorplanView({
           className="relative mx-auto origin-top-left transition-transform duration-150"
           style={{
             width: "100%",
-            minWidth: "min(100%, 720px)",
+            minWidth: "min(100%, 960px)",
             aspectRatio: `${FLOOR_ROOM_ASPECT} / 1`,
             transform: `scale(${zoom})`,
             transformOrigin: "top center",
           }}
         >
-          <div className="absolute inset-2 sm:inset-3 rounded-xl border border-gold/25 bg-[radial-gradient(ellipse_at_center,#111a12_0%,#080f0a_100%)]">
+          <div className="absolute inset-2 sm:inset-3 rounded-xl border-2 border-gray-600/50 bg-[radial-gradient(ellipse_at_center,#111a12_0%,#080f0a_100%)]">
             {ROPE_OFF_REGIONS.map((region, i) => (
               <RegionOverlay key={`roped-${i}`} region={region} />
             ))}
             <RegionOverlay region={STAIRCASE_REGION} />
+
+            {OTHER_ELEMENTS.map((element, i) => (
+              <FurnitureElement key={`furniture-${i}`} element={element} />
+            ))}
+
+            {ropedMarkers.map(({ tableNumber, position }) => (
+              <div
+                key={`roped-${tableNumber}`}
+                className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                style={{
+                  left: `${position.x}%`,
+                  top: `${position.y}%`,
+                }}
+              >
+                <RopedTableOctagon tableNumber={tableNumber} />
+              </div>
+            ))}
 
             {markers.map(({ tableIndex, tableNumber, position }) => {
               const table = tables[tableIndex];
@@ -356,7 +407,7 @@ export function ZollhausFloorplanView({
               return (
                 <div
                   key={tableNumber}
-                  className="absolute"
+                  className="absolute -translate-x-1/2 -translate-y-1/2"
                   style={{
                     left: `${position.x}%`,
                     top: `${position.y}%`,
