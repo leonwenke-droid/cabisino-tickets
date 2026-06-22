@@ -39,6 +39,7 @@ import {
   type TableSortMode,
 } from "@/lib/assign-seats";
 import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
+import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place-cards-pdf";
 
 const TABLE_COUNT_STORAGE_KEY = "admin_tische_table_count";
 const TABLE_SORT_STORAGE_KEY = "admin_tische_table_sort";
@@ -542,6 +543,8 @@ export function TischeTab({
   );
   const [tableSort, setTableSort] = useState<TableSortMode>(() => readStoredTableSort());
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [exportingPlaceCards, setExportingPlaceCards] = useState(false);
+  const [exportingPlaceCardsZip, setExportingPlaceCardsZip] = useState(false);
   const [currentTables, setCurrentTables] = useState<AssignedTable[] | null>(null);
   const [manualEntryIds, setManualEntryIds] = useState<Set<string>>(new Set());
   const [baseAssignmentSignatures, setBaseAssignmentSignatures] = useState<
@@ -737,6 +740,34 @@ export function TischeTab({
     }
   }, [displayResult.tables]);
 
+  const handlePlaceCardsExport = useCallback(async () => {
+    setExportingPlaceCards(true);
+    try {
+      await downloadPlaceCardsPdf(displayResult.tables);
+      setExportMsg("Platzkarten als PDF heruntergeladen!");
+      setTimeout(() => setExportMsg(null), 2500);
+    } catch {
+      setExportMsg("Platzkarten-Export fehlgeschlagen.");
+      setTimeout(() => setExportMsg(null), 2500);
+    } finally {
+      setExportingPlaceCards(false);
+    }
+  }, [displayResult.tables]);
+
+  const handlePlaceCardsZipExport = useCallback(async () => {
+    setExportingPlaceCardsZip(true);
+    try {
+      await downloadPlaceCardsZip(displayResult.tables);
+      setExportMsg("Platzkarten als ZIP heruntergeladen!");
+      setTimeout(() => setExportMsg(null), 2500);
+    } catch {
+      setExportMsg("Platzkarten-ZIP-Export fehlgeschlagen.");
+      setTimeout(() => setExportMsg(null), 2500);
+    } finally {
+      setExportingPlaceCardsZip(false);
+    }
+  }, [displayResult.tables]);
+
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
     setOverDropId(null);
@@ -918,6 +949,22 @@ export function TischeTab({
             className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all"
           >
             Tischplan exportieren
+          </button>
+          <button
+            type="button"
+            onClick={handlePlaceCardsExport}
+            disabled={exportingPlaceCards || exportingPlaceCardsZip}
+            className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
+          >
+            {exportingPlaceCards ? "Platzkarten…" : "Platzkarten exportieren"}
+          </button>
+          <button
+            type="button"
+            onClick={handlePlaceCardsZipExport}
+            disabled={exportingPlaceCards || exportingPlaceCardsZip}
+            className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
+          >
+            {exportingPlaceCardsZip ? "ZIP…" : "Platzkarten als Bilder (ZIP)"}
           </button>
         </div>
       </div>
