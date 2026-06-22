@@ -1,6 +1,13 @@
 import type { Entry } from "@/lib/supabase";
+import {
+  TABLE_CAPACITY,
+  TABLE_CAPACITY_MAX_EXCEPTION,
+  ZOLLHAUS_TABLE_COUNT,
+  formatZollhausTableLabel,
+  getTableCapacityForDisplay,
+} from "@/lib/zollhaus-tables";
 
-export const SEATS_PER_TABLE = 8;
+export const SEATS_PER_TABLE = TABLE_CAPACITY;
 
 export type WishContext = {
   lookup: Map<string, Entry[]>;
@@ -293,7 +300,18 @@ function createEmptyTables(count: number): AssignedTable[] {
 }
 
 function tableRemaining(table: AssignedTable): number {
-  return SEATS_PER_TABLE - table.seatsUsed;
+  if (table.seatsUsed >= TABLE_CAPACITY) {
+    return TABLE_CAPACITY_MAX_EXCEPTION - table.seatsUsed;
+  }
+  return TABLE_CAPACITY - table.seatsUsed;
+}
+
+function fitsStandardCapacity(table: AssignedTable, needed: number): boolean {
+  return table.seatsUsed + needed <= TABLE_CAPACITY;
+}
+
+function fitsExceptionCapacity(table: AssignedTable, needed: number): boolean {
+  return table.seatsUsed + needed <= TABLE_CAPACITY_MAX_EXCEPTION;
 }
 
 function findBestTableForCluster(
@@ -304,8 +322,20 @@ function findBestTableForCluster(
   let bestRemaining = -1;
 
   for (let i = 0; i < tables.length; i++) {
-    const remaining = tableRemaining(tables[i]);
-    if (remaining >= needed && remaining > bestRemaining) {
+    if (!fitsStandardCapacity(tables[i], needed)) continue;
+    const remaining = TABLE_CAPACITY - tables[i].seatsUsed;
+    if (remaining > bestRemaining) {
+      bestRemaining = remaining;
+      bestIdx = i;
+    }
+  }
+  if (bestIdx !== null) return bestIdx;
+
+  bestRemaining = -1;
+  for (let i = 0; i < tables.length; i++) {
+    if (!fitsExceptionCapacity(tables[i], needed)) continue;
+    const remaining = TABLE_CAPACITY_MAX_EXCEPTION - tables[i].seatsUsed;
+    if (remaining > bestRemaining) {
       bestRemaining = remaining;
       bestIdx = i;
     }
@@ -407,13 +437,13 @@ function assignLargePreferenceCluster(
 ) {
   const persons = clusterPersons(cluster);
 
-  if (cluster.length === 1 && cluster[0].total_persons > SEATS_PER_TABLE) {
+  if (cluster.length === 1 && cluster[0].total_persons > TABLE_CAPACITY_MAX_EXCEPTION) {
     overCapacityEntries.push(cluster[0]);
     assignCluster(tables, cluster, lockTableCount);
     return;
   }
 
-  if (persons <= SEATS_PER_TABLE) {
+  if (persons <= TABLE_CAPACITY_MAX_EXCEPTION) {
     assignCluster(tables, cluster, lockTableCount);
     return;
   }
@@ -534,7 +564,7 @@ export function getTableSatisfaction(
   ctx?: WishContext
 ): TableSatisfaction {
   const wishCtx = ctx ?? buildWishContext(allEntries);
-  if (table.seatsUsed > SEATS_PER_TABLE) return "overfull";
+  if (table.seatsUsed > TABLE_CAPACITY_MAX_EXCEPTION) return "overfull";
 
   const hasConflictOnTable = unfulfilledWishes.some(
     (w) =>
@@ -630,10 +660,7 @@ export function buildSeatGroups(table: AssignedTable): SeatGroup[] {
   return groups;
 }
 
-export function assignSeats(
-  entries: Entry[],
-  options?: { fixedTableCount?: number }
-): AssignSeatsResult {
+export function assignSeats(entries: Entry[]): AssignSeatsResult {
   const emptyResult: AssignSeatsResult = {
     tables: [],
     unfulfilledWishes: [],
@@ -648,16 +675,13 @@ export function assignSeats(
   const oversizedGroups: OversizedGroup[] = [];
 
   for (const entry of entries) {
-    if (entry.total_persons > SEATS_PER_TABLE) {
+    if (entry.total_persons > TABLE_CAPACITY_MAX_EXCEPTION) {
       overCapacityEntries.push(entry);
     }
   }
 
-  const totalPersons = entries.reduce((sum, e) => sum + e.total_persons, 0);
-  const autoTableCount = Math.ceil(totalPersons / SEATS_PER_TABLE);
-  const fixedCount = options?.fixedTableCount;
-  const initialTableCount = fixedCount ?? autoTableCount;
-  const lockTableCount = fixedCount !== undefined && fixedCount > 0;
+  const initialTableCount = ZOLLHAUS_TABLE_COUNT;
+  const lockTableCount = true;
 
   const wishCtx = buildWishContext(entries);
   const graph = buildSameTableGraph(entries, wishCtx);
@@ -687,14 +711,10 @@ export function assignSeats(
   assignNeutralEntries(tables, neutralEntries, lockTableCount);
 
   let resultTables = tables;
-  if (lockTableCount) {
-    while (resultTables.length < fixedCount!) {
-      resultTables.push({ entries: [], seatsUsed: 0 });
-    }
-    resultTables = resultTables.slice(0, fixedCount);
-  } else {
-    resultTables = tables.filter((t) => t.entries.length > 0);
+  while (resultTables.length < ZOLLHAUS_TABLE_COUNT) {
+    resultTables.push({ entries: [], seatsUsed: 0 });
   }
+  resultTables = resultTables.slice(0, ZOLLHAUS_TABLE_COUNT);
 
   const unfulfilledWishes = computeUnfulfilledWishes(entries, resultTables, wishCtx);
   const stats = computeWishStats(entries, resultTables, wishCtx);
@@ -768,29 +788,16 @@ export function buildAssignmentSignatures(
 
 export type TableSortMode = "default" | "seats-asc" | "seats-desc";
 
-export function sortTables(
-  tables: AssignedTable[],
-  mode: TableSortMode
-): AssignedTable[] {
-  const occupied = tables.filter((t) => t.entries.length > 0);
-  const empty = tables.filter((t) => t.entries.length === 0);
-
-  if (mode === "default") {
-    return [...occupied, ...empty];
-  }
-
-  const sorted = [...occupied].sort((a, b) =>
-    mode === "seats-asc" ? a.seatsUsed - b.seatsUsed : b.seatsUsed - a.seatsUsed
-  );
-  return [...sorted, ...empty];
+export function sortTables(tables: AssignedTable[]): AssignedTable[] {
+  return cloneTables(tables);
 }
 
 export function sortTablesEmptyLast(tables: AssignedTable[]): AssignedTable[] {
-  return sortTables(tables, "default");
+  return sortTables(tables);
 }
 
 export function canDropEntryOnTable(table: AssignedTable, entry: Entry): boolean {
-  return table.seatsUsed + entry.total_persons <= SEATS_PER_TABLE;
+  return table.seatsUsed + entry.total_persons <= TABLE_CAPACITY_MAX_EXCEPTION;
 }
 
 export function canDropEntryOnTableExcluding(
@@ -803,7 +810,7 @@ export function canDropEntryOnTableExcluding(
   if (!target) return false;
   let used = target.seatsUsed;
   if (sourceTableIdx === targetTableIdx) used -= entry.total_persons;
-  return used + entry.total_persons <= SEATS_PER_TABLE;
+  return used + entry.total_persons <= TABLE_CAPACITY_MAX_EXCEPTION;
 }
 
 export function findEntryTableIndex(
@@ -943,7 +950,7 @@ export function entryWishBroken(
 }
 
 export function isTableOverfull(table: AssignedTable): boolean {
-  return table.seatsUsed > SEATS_PER_TABLE;
+  return table.seatsUsed > TABLE_CAPACITY_MAX_EXCEPTION;
 }
 
 export function exportSeatingPlan(
@@ -957,8 +964,9 @@ export function exportSeatingPlan(
   result.tables.forEach((table, i) => {
     const splitNote = table.groupSplit ? " [Gruppe aufgeteilt]" : "";
     const overfullNote = isTableOverfull(table) ? " ⚠ ÜBERFÜLLT" : "";
+    const cap = getTableCapacityForDisplay(table.seatsUsed);
     lines.push(
-      `Tisch ${i + 1} (${table.seatsUsed}/${SEATS_PER_TABLE} Plätze)${splitNote}${overfullNote}:`
+      `${formatZollhausTableLabel(i)} (${table.seatsUsed}/${cap} Plätze)${splitNote}${overfullNote}:`
     );
     for (const entry of table.entries) {
       const wish = entry.sitzwunsch?.trim();

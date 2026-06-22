@@ -1,5 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { AssignedTable } from "@/lib/assign-seats";
+import { getZollhausTableNumber } from "@/lib/zollhaus-tables";
 
 const CARD_W_MM = 100;
 const CARD_H_MM = 150;
@@ -29,7 +30,7 @@ function collectPlaceCards(tables: AssignedTable[]): PlaceCardData[] {
         guestNames.push(entry.guests?.[i] ?? `Begleitung ${i + 1}`);
       }
       cards.push({
-        tableNumber: tableIdx + 1,
+        tableNumber: getZollhausTableNumber(tableIdx),
         vorname: entry.vorname,
         nachname: entry.nachname,
         guestNames,

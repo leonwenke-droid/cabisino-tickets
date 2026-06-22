@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import type { AssignedTable } from "@/lib/assign-seats";
-import { SEATS_PER_TABLE } from "@/lib/assign-seats";
+import { TABLE_CAPACITY, formatZollhausTableLabel } from "@/lib/zollhaus-tables";
 
 type SeatLine = {
   text: string;
@@ -41,7 +41,7 @@ function buildSeatLines(table: AssignedTable): SeatLine[] {
     }
   }
 
-  const emptyCount = Math.max(0, SEATS_PER_TABLE - table.seatsUsed);
+  const emptyCount = Math.max(0, TABLE_CAPACITY - table.seatsUsed);
   for (let i = 0; i < emptyCount; i++) {
     lines.push({ text: "  – (frei)", kind: "empty" });
   }
@@ -105,7 +105,9 @@ function drawTableCard(
   setText(doc, COLORS.header);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.text(`Tisch ${tableIndex + 1}`, x + w / 2, cursorY, { align: "center" });
+  doc.text(formatZollhausTableLabel(tableIndex), x + w / 2, cursorY, {
+    align: "center",
+  });
 
   cursorY += 3;
   setDraw(doc, COLORS.gold);

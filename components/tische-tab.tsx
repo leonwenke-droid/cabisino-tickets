@@ -31,18 +31,19 @@ import {
   shuffleNeutralEntries,
   syncManualEntryIds,
   isTableOverfull,
-  sortTables,
   findEntryTableIndex,
-  SEATS_PER_TABLE,
   type AssignSeatsResult,
   type AssignedTable,
-  type TableSortMode,
 } from "@/lib/assign-seats";
 import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
 import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place-cards-pdf";
+import {
+  ZOLLHAUS_TABLE_COUNT,
+  formatZollhausTableLabel,
+  getMaxVenueCapacity,
+  getTableCapacityForDisplay,
+} from "@/lib/zollhaus-tables";
 
-const TABLE_COUNT_STORAGE_KEY = "admin_tische_table_count";
-const TABLE_SORT_STORAGE_KEY = "admin_tische_table_sort";
 const TISCHPLAN_STORAGE_KEY = "cabisino-tischplan";
 const LEGACY_TISCHPLAN_STORAGE_KEY = "kabisino-tischplan";
 
@@ -105,11 +106,25 @@ function readTischplanStorageRaw(): string | null {
   return null;
 }
 
-function createEmptyAssignedTables(count: number): AssignedTable[] {
-  return Array.from({ length: Math.max(count, 1) }, () => ({
+function createEmptyAssignedTables(): AssignedTable[] {
+  return Array.from({ length: ZOLLHAUS_TABLE_COUNT }, () => ({
     entries: [],
     seatsUsed: 0,
   }));
+}
+
+function normalizeAssignedTables(tables: AssignedTable[]): AssignedTable[] {
+  if (tables.length === ZOLLHAUS_TABLE_COUNT) return tables;
+  if (tables.length < ZOLLHAUS_TABLE_COUNT) {
+    return [
+      ...tables,
+      ...Array.from({ length: ZOLLHAUS_TABLE_COUNT - tables.length }, () => ({
+        entries: [],
+        seatsUsed: 0,
+      })),
+    ];
+  }
+  return tables.slice(0, ZOLLHAUS_TABLE_COUNT);
 }
 
 function loadPersistedTischplan(entries: Entry[]): AssignedTable[] | null {
@@ -119,49 +134,13 @@ function loadPersistedTischplan(entries: Entry[]): AssignedTable[] | null {
   try {
     const parsed = JSON.parse(raw) as PersistedTischplan;
     if (!Array.isArray(parsed.tables)) return null;
-    return deserializeTischplan(parsed, entries);
+    return normalizeAssignedTables(deserializeTischplan(parsed, entries));
   } catch {
     return null;
   }
 }
 
-const TABLE_SORT_OPTIONS: { value: TableSortMode; label: string }[] = [
-  { value: "default", label: "Standard" },
-  { value: "seats-asc", label: "Plätze ↑" },
-  { value: "seats-desc", label: "Plätze ↓" },
-];
-
 type WishDotStatus = "none" | "fulfilled" | "unmet" | "conflict";
-
-function readStoredTableCount(): { input: string; applied?: number } {
-  if (typeof window === "undefined") return { input: "" };
-  const stored = sessionStorage.getItem(TABLE_COUNT_STORAGE_KEY) ?? "";
-  const n = parseInt(stored.trim(), 10);
-  return {
-    input: stored,
-    applied: Number.isFinite(n) && n > 0 ? n : undefined,
-  };
-}
-
-function persistTableCount(value: string) {
-  if (typeof window === "undefined") return;
-  if (value.trim()) sessionStorage.setItem(TABLE_COUNT_STORAGE_KEY, value.trim());
-  else sessionStorage.removeItem(TABLE_COUNT_STORAGE_KEY);
-}
-
-function readStoredTableSort(): TableSortMode {
-  if (typeof window === "undefined") return "default";
-  const stored = sessionStorage.getItem(TABLE_SORT_STORAGE_KEY);
-  if (stored === "seats-asc" || stored === "seats-desc" || stored === "default") {
-    return stored;
-  }
-  return "default";
-}
-
-function persistTableSort(mode: TableSortMode) {
-  if (typeof window === "undefined") return;
-  sessionStorage.setItem(TABLE_SORT_STORAGE_KEY, mode);
-}
 
 function truncateSitzwunsch(text: string, max = 24): string {
   const trimmed = text.trim();
@@ -427,6 +406,7 @@ function PokerTableCard({
       ? "partial"
       : rawSatisfaction;
   const overfull = !table.manuallyResolved && isTableOverfull(table);
+  const seatCap = getTableCapacityForDisplay(table.seatsUsed);
   const seatGroups = buildSeatGroups(table);
   const manualCount = table.entries.filter((e) => manualEntryIds.has(e.id)).length;
   const hasIssue = overfull || satisfaction === "conflict";
@@ -467,8 +447,8 @@ function PokerTableCard({
               }`}
             >
               {overfull
-                ? `Überfüllt · ${table.seatsUsed}/${SEATS_PER_TABLE}`
-                : `${table.seatsUsed}/${SEATS_PER_TABLE}`}
+                ? `Überfüllt · ${table.seatsUsed}/${seatCap}`
+                : `${table.seatsUsed}/${seatCap}`}
             </span>
             {manualCount > 0 && (
               <span className="text-[9px] font-sans text-gray-400/80 italic">
@@ -479,7 +459,7 @@ function PokerTableCard({
 
           <div className="text-center pt-1 pb-3 mb-1 border-b border-gold/25">
             <h3 className="font-serif text-xl text-gold tracking-wide">
-              Tisch {index + 1}
+              {formatZollhausTableLabel(index)}
             </h3>
             {table.groupSplit && (
               <p className="text-[10px] text-yellow-400/65 italic font-sans mt-1">
@@ -550,13 +530,6 @@ export function TischeTab({
   isLoading?: boolean;
 }) {
   const [recalcKey, setRecalcKey] = useState(0);
-  const [tableCountInput, setTableCountInput] = useState(
-    () => readStoredTableCount().input
-  );
-  const [appliedTableCount, setAppliedTableCount] = useState<number | undefined>(
-    () => readStoredTableCount().applied
-  );
-  const [tableSort, setTableSort] = useState<TableSortMode>(() => readStoredTableSort());
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportingPlaceCards, setExportingPlaceCards] = useState(false);
   const [exportingPlaceCardsZip, setExportingPlaceCardsZip] = useState(false);
@@ -571,14 +544,10 @@ export function TischeTab({
   const [planLoadedFromStorage, setPlanLoadedFromStorage] = useState(false);
   const [skipBaseResultSync, setSkipBaseResultSync] = useState(false);
 
-  const fixedTableCount = appliedTableCount;
-
   const baseResult = useMemo(() => {
     void recalcKey;
-    return assignSeats(entries, {
-      ...(fixedTableCount ? { fixedTableCount } : {}),
-    });
-  }, [entries, recalcKey, fixedTableCount]);
+    return assignSeats(entries);
+  }, [entries, recalcKey]);
 
   const unresolvableNames = useMemo(
     () => collectUnresolvableNames(entries),
@@ -590,19 +559,19 @@ export function TischeTab({
 
     const persisted = loadPersistedTischplan(entries);
     if (persisted) {
-      setCurrentTables(sortTables(persisted, tableSort));
+      setCurrentTables(cloneTables(persisted));
       setSkipBaseResultSync(true);
       setPlanLoadedFromStorage(true);
     }
     setPlanInitialized(true);
-  }, [entries, planInitialized, tableSort]);
+  }, [entries, planInitialized]);
 
   useEffect(() => {
     if (!planInitialized || skipBaseResultSync) return;
-    setCurrentTables(sortTables(cloneTables(baseResult.tables), tableSort));
+    setCurrentTables(cloneTables(baseResult.tables));
     setManualEntryIds(new Set());
     setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
-  }, [baseResult, skipBaseResultSync, planInitialized, tableSort]);
+  }, [baseResult, skipBaseResultSync, planInitialized]);
 
   useEffect(() => {
     if (!skipBaseResultSync || !currentTables) return;
@@ -636,16 +605,6 @@ export function TischeTab({
     });
   }, [entries, skipBaseResultSync]);
 
-  useEffect(() => {
-    setCurrentTables((prev) => (prev ? sortTables(prev, tableSort) : prev));
-    persistTableSort(tableSort);
-  }, [tableSort]);
-
-  const applyTableSort = useCallback(
-    (tables: AssignedTable[]) => sortTables(tables, tableSort),
-    [tableSort]
-  );
-
   const displayResult = useMemo(() => {
     const tables = currentTables ?? baseResult.tables;
     return buildResultFromTables(entries, tables, {
@@ -658,6 +617,9 @@ export function TischeTab({
     () => entries.reduce((s, e) => s + e.total_persons, 0),
     [entries]
   );
+
+  const maxVenueCapacity = getMaxVenueCapacity();
+  const capacityExceeded = totalPersons > maxVenueCapacity;
 
   const overCapacityIds = useMemo(
     () => new Set(displayResult.overCapacityEntries.map((e) => e.id)),
@@ -703,46 +665,31 @@ export function TischeTab({
     clearPersistedTischplan();
     setSkipBaseResultSync(false);
     setPlanLoadedFromStorage(false);
-    const n = parseInt(tableCountInput.trim(), 10);
-    const applied = Number.isFinite(n) && n > 0 ? n : undefined;
-    setAppliedTableCount(applied);
-    persistTableCount(tableCountInput);
     setRecalcKey((k) => k + 1);
-  }, [tableCountInput]);
+  }, []);
 
   const handleClearPlan = useCallback(() => {
     clearPersistedTischplan();
     setSkipBaseResultSync(false);
     setPlanLoadedFromStorage(false);
-    const autoCount = Math.max(
-      1,
-      Math.ceil(entries.reduce((s, e) => s + e.total_persons, 0) / SEATS_PER_TABLE)
-    );
-    const count = appliedTableCount ?? autoCount;
-    setCurrentTables(createEmptyAssignedTables(count));
+    setCurrentTables(createEmptyAssignedTables());
     setManualEntryIds(new Set());
-  }, [appliedTableCount, entries]);
-
-  const handleTableCountChange = useCallback((value: string) => {
-    setTableCountInput(value);
-    persistTableCount(value);
   }, []);
 
   const handleResetManual = useCallback(() => {
     clearPersistedTischplan();
     setSkipBaseResultSync(false);
     setPlanLoadedFromStorage(false);
-    setCurrentTables(applyTableSort(cloneTables(baseResult.tables)));
+    setCurrentTables(cloneTables(baseResult.tables));
     setManualEntryIds(new Set());
-  }, [baseResult.tables, applyTableSort]);
+  }, [baseResult.tables]);
 
   const handleShuffle = useCallback(() => {
     if (!currentTables) return;
     const shuffled = shuffleNeutralEntries(currentTables);
-    const sorted = applyTableSort(shuffled);
-    setCurrentTables(sorted);
-    setManualEntryIds(syncManualEntryIds(sorted, baseAssignmentSignatures));
-  }, [currentTables, baseAssignmentSignatures, applyTableSort]);
+    setCurrentTables(cloneTables(shuffled));
+    setManualEntryIds(syncManualEntryIds(shuffled, baseAssignmentSignatures));
+  }, [currentTables, baseAssignmentSignatures]);
 
   const handleExport = useCallback(() => {
     try {
@@ -822,12 +769,11 @@ export function TischeTab({
         newTables[targetIdx].manuallyResolved = true;
       }
 
-      const sorted = applyTableSort(newTables);
-      setCurrentTables(sorted);
-      setManualEntryIds(syncManualEntryIds(sorted, baseAssignmentSignatures));
-      persistTischplan(sorted);
+      setCurrentTables(cloneTables(newTables));
+      setManualEntryIds(syncManualEntryIds(newTables, baseAssignmentSignatures));
+      persistTischplan(newTables);
     },
-    [currentTables, baseResult.tables, baseAssignmentSignatures, applyTableSort]
+    [currentTables, baseResult.tables, baseAssignmentSignatures]
   );
 
   const handleDragCancel = useCallback(() => {
@@ -905,36 +851,7 @@ export function TischeTab({
 
       {/* Settings bar */}
       <div className="felt-card rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-end gap-3">
-        <div className="flex-1 min-w-[140px]">
-          <label className="block text-cream-muted text-[10px] font-sans uppercase tracking-wide mb-1.5">
-            Verfügbare Tische
-          </label>
-          <input
-            type="number"
-            min={1}
-            value={tableCountInput}
-            onChange={(e) => handleTableCountChange(e.target.value)}
-            placeholder="Automatisch"
-            className="input-dark w-full rounded-lg px-3 py-2 text-sm font-sans outline-none"
-          />
-        </div>
-        <div className="flex-1 min-w-[140px]">
-          <label className="block text-cream-muted text-[10px] font-sans uppercase tracking-wide mb-1.5">
-            Sortierung
-          </label>
-          <select
-            value={tableSort}
-            onChange={(e) => setTableSort(e.target.value as TableSortMode)}
-            className="input-dark w-full rounded-lg px-3 py-2 text-sm font-sans outline-none"
-          >
-            {TABLE_SORT_OPTIONS.map(({ value, label }) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-wrap gap-2 sm:ml-auto">
+        <div className="flex flex-wrap gap-2 sm:ml-auto w-full sm:w-auto">
           <button
             type="button"
             onClick={handleRecalculate}
@@ -989,7 +906,7 @@ export function TischeTab({
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
           <div className="felt-card rounded-xl px-3 py-4 text-center">
             <span className="text-gold/50 text-xl leading-none">♠</span>
-            <p className="font-serif text-2xl text-gold mt-2 tabular-nums">{tables.length}</p>
+            <p className="font-serif text-2xl text-gold mt-2 tabular-nums">{ZOLLHAUS_TABLE_COUNT}</p>
             <p className="text-cream-muted text-[10px] font-sans uppercase tracking-wide mt-1">
               Tische
             </p>
@@ -1031,6 +948,14 @@ export function TischeTab({
         </div>
         <div className="mt-4 border-b border-gold/20" />
       </div>
+
+      {capacityExceeded && (
+        <div className="rounded-2xl border border-red-500/35 bg-red-500/10 px-4 py-3 text-red-300 text-xs font-sans leading-relaxed">
+          <span className="mr-1">⚠</span>
+          Kapazität überschritten: {totalPersons} Personen, aber nur {maxVenueCapacity}{" "}
+          Plätze verfügbar ({ZOLLHAUS_TABLE_COUNT} Tische × max. 9).
+        </div>
+      )}
 
       {exportMsg && (
         <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-emerald-400 text-xs font-sans text-center">
