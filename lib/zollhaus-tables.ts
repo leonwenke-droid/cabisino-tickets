@@ -1,15 +1,18 @@
-/** Physical table numbers available at the Zollhaus for this event (tables 1–20 are roped off). */
-export const ZOLLHAUS_TABLE_NUMBERS: number[] = [
-  21, 22,
-  32, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 58, 59, 60,
-];
+/** Tables 1–20 are roped off; this event uses tables 21 through 60 (40 tables). */
+export const ZOLLHAUS_FIRST_TABLE = 21;
+export const ZOLLHAUS_LAST_TABLE = 60;
+
+export const ZOLLHAUS_TABLE_NUMBERS: number[] = Array.from(
+  { length: ZOLLHAUS_LAST_TABLE - ZOLLHAUS_FIRST_TABLE + 1 },
+  (_, i) => ZOLLHAUS_FIRST_TABLE + i
+);
 
 export const TABLE_CAPACITY = 8;
 export const TABLE_CAPACITY_MAX_EXCEPTION = 9;
 export const ZOLLHAUS_TABLE_COUNT = ZOLLHAUS_TABLE_NUMBERS.length;
 
 export function getZollhausTableNumber(tableIndex: number): number {
-  return ZOLLHAUS_TABLE_NUMBERS[tableIndex] ?? tableIndex + 1;
+  return ZOLLHAUS_TABLE_NUMBERS[tableIndex] ?? ZOLLHAUS_FIRST_TABLE + tableIndex;
 }
 
 export function formatZollhausTableLabel(tableIndex: number): string {
