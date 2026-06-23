@@ -1,10 +1,12 @@
 import type { Entry } from "@/lib/supabase";
 import {
+  ASSIGNABLE_TABLE_COUNT,
   TABLE_CAPACITY,
   TABLE_CAPACITY_MAX_EXCEPTION,
   ZOLLHAUS_TABLE_COUNT,
   formatZollhausTableLabel,
   getTableCapacityForDisplay,
+  isBufferTableIndex,
 } from "@/lib/zollhaus-tables";
 
 export const SEATS_PER_TABLE = TABLE_CAPACITY;
@@ -314,6 +316,10 @@ function fitsExceptionCapacity(table: AssignedTable, needed: number): boolean {
   return table.seatsUsed + needed <= TABLE_CAPACITY_MAX_EXCEPTION;
 }
 
+function isAssignableTableIndex(tableIdx: number): boolean {
+  return tableIdx >= 0 && tableIdx < ASSIGNABLE_TABLE_COUNT && !isBufferTableIndex(tableIdx);
+}
+
 function findBestTableForCluster(
   tables: AssignedTable[],
   needed: number
@@ -322,6 +328,7 @@ function findBestTableForCluster(
   let bestRemaining = -1;
 
   for (let i = 0; i < tables.length; i++) {
+    if (!isAssignableTableIndex(i)) continue;
     if (!fitsStandardCapacity(tables[i], needed)) continue;
     const remaining = TABLE_CAPACITY - tables[i].seatsUsed;
     if (remaining > bestRemaining) {
@@ -333,6 +340,7 @@ function findBestTableForCluster(
 
   bestRemaining = -1;
   for (let i = 0; i < tables.length; i++) {
+    if (!isAssignableTableIndex(i)) continue;
     if (!fitsExceptionCapacity(tables[i], needed)) continue;
     const remaining = TABLE_CAPACITY_MAX_EXCEPTION - tables[i].seatsUsed;
     if (remaining > bestRemaining) {
@@ -365,6 +373,7 @@ function findTableForCluster(
     let bestIdx = 0;
     let bestRemaining = -Infinity;
     for (let i = 0; i < tables.length; i++) {
+      if (!isAssignableTableIndex(i)) continue;
       const remaining = tableRemaining(tables[i]);
       if (remaining > bestRemaining) {
         bestRemaining = remaining;
@@ -413,9 +422,14 @@ function assignClusterPartsAdjacent(
   }
 
   for (let i = 0; i < parts.length; i++) {
-    let targetIdx = startIdx + i;
+    let targetIdx =
+      i === 0 ? startIdx : Math.min(startIdx + i, ASSIGNABLE_TABLE_COUNT - 1);
     if (lockTableCount) {
-      if (targetIdx >= tables.length) targetIdx = tables.length - 1;
+      if (!isAssignableTableIndex(targetIdx)) {
+        targetIdx =
+          findBestTableForCluster(tables, clusterPersons(parts[i])) ??
+          findTableForCluster(tables, clusterPersons(parts[i]), true);
+      }
     } else {
       while (targetIdx >= tables.length) {
         tables.push({ entries: [], seatsUsed: 0 });
@@ -806,6 +820,7 @@ export function canDropEntryOnTableExcluding(
   entry: Entry,
   sourceTableIdx: number
 ): boolean {
+  if (isBufferTableIndex(targetTableIdx)) return false;
   const target = tables[targetTableIdx];
   if (!target) return false;
   let used = target.seatsUsed;
@@ -841,6 +856,7 @@ export function moveEntryToTable(
   targetTableIdx: number
 ): AssignedTable[] | null {
   if (targetTableIdx < 0 || targetTableIdx >= tables.length) return null;
+  if (isBufferTableIndex(targetTableIdx)) return null;
 
   const sourceIdx = findEntryTableIndex(tables, entryId);
   if (sourceIdx < 0) return null;
@@ -867,6 +883,7 @@ export function assignEntryToTable(
   targetTableIdx: number
 ): AssignedTable[] | null {
   if (targetTableIdx < 0 || targetTableIdx >= tables.length) return null;
+  if (isBufferTableIndex(targetTableIdx)) return null;
 
   const sourceIdx = findEntryTableIndex(tables, entry.id);
   if (sourceIdx === targetTableIdx) return cloneTables(tables);
@@ -1037,6 +1054,7 @@ export function swapTableAssignments(
     return null;
   }
   if (indexA === indexB) return cloneTables(tables);
+  if (isBufferTableIndex(indexA) || isBufferTableIndex(indexB)) return null;
 
   const cloned = cloneTables(tables);
   const a = cloned[indexA];

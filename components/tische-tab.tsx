@@ -44,10 +44,14 @@ import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
 import { Floorplan } from "@/components/floorplan";
 import { ManualAssignView } from "@/components/manual-assign-view";
 import {
+  ASSIGNABLE_TABLE_COUNT,
+  BUFFER_TABLE_COUNT,
   ZOLLHAUS_TABLE_COUNT,
   formatZollhausTableLabel,
+  getBufferTableNumber,
   getMaxVenueCapacity,
   getTableCapacityForDisplay,
+  isBufferTableIndex,
 } from "@/lib/zollhaus-tables";
 import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place-cards-pdf";
 
@@ -861,6 +865,7 @@ export function TischeTab({
   const handleSwapTables = useCallback(
     (indexA: number, indexB: number) => {
       if (indexA === indexB) return;
+      if (isBufferTableIndex(indexA) || isBufferTableIndex(indexB)) return;
 
       const tables = currentTables ?? baseResult.tables;
       const newTables = swapTableAssignments(tables, indexA, indexB);
@@ -889,6 +894,8 @@ export function TischeTab({
 
   const handleManualAssign = useCallback(
     (entryId: string, targetIdx: number) => {
+      if (isBufferTableIndex(targetIdx)) return;
+
       const entry = entries.find((e) => e.id === entryId);
       if (!entry) return;
 
@@ -1138,7 +1145,8 @@ export function TischeTab({
         <div className="rounded-2xl border border-red-500/35 bg-red-500/10 px-4 py-3 text-red-300 text-xs font-sans leading-relaxed">
           <span className="mr-1">⚠</span>
           Kapazität überschritten: {totalPersons} Personen, aber nur {maxVenueCapacity}{" "}
-          Plätze verfügbar ({ZOLLHAUS_TABLE_COUNT} Tische × 8, max. 9 pro Tisch).
+          Plätze verfügbar ({ASSIGNABLE_TABLE_COUNT} Tische + {BUFFER_TABLE_COUNT}{" "}
+          Puffer Tisch {getBufferTableNumber()} × 8, max. 9 pro Tisch).
         </div>
       )}
 

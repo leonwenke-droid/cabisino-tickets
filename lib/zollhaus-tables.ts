@@ -9,6 +9,10 @@ export const ZOLLHAUS_TABLE_NUMBERS: number[] = [
 export const TABLE_CAPACITY = 8;
 export const TABLE_CAPACITY_MAX_EXCEPTION = 9;
 export const ZOLLHAUS_TABLE_COUNT = ZOLLHAUS_TABLE_NUMBERS.length;
+/** One table stays empty as a buffer for last-minute moves. */
+export const BUFFER_TABLE_COUNT = 1;
+export const BUFFER_TABLE_INDEX = ZOLLHAUS_TABLE_COUNT - BUFFER_TABLE_COUNT;
+export const ASSIGNABLE_TABLE_COUNT = ZOLLHAUS_TABLE_COUNT - BUFFER_TABLE_COUNT;
 
 const ZOLLHAUS_TABLE_NUMBER_SET = new Set(ZOLLHAUS_TABLE_NUMBERS);
 
@@ -24,12 +28,20 @@ export function formatZollhausTableLabel(tableIndex: number): string {
   return `Tisch ${getZollhausTableNumber(tableIndex)}`;
 }
 
+export function isBufferTableIndex(tableIndex: number): boolean {
+  return tableIndex === BUFFER_TABLE_INDEX;
+}
+
+export function getBufferTableNumber(): number {
+  return getZollhausTableNumber(BUFFER_TABLE_INDEX);
+}
+
 export function getBaseVenueCapacity(): number {
-  return ZOLLHAUS_TABLE_COUNT * TABLE_CAPACITY;
+  return ASSIGNABLE_TABLE_COUNT * TABLE_CAPACITY;
 }
 
 export function getMaxVenueCapacity(): number {
-  return ZOLLHAUS_TABLE_COUNT * TABLE_CAPACITY_MAX_EXCEPTION;
+  return ASSIGNABLE_TABLE_COUNT * TABLE_CAPACITY_MAX_EXCEPTION;
 }
 
 export function getTableCapacityForDisplay(seatsUsed: number): number {

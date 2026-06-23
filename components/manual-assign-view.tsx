@@ -31,6 +31,7 @@ import {
   TABLE_CAPACITY_MAX_EXCEPTION,
   ZOLLHAUS_TABLE_NUMBERS,
   getTableCapacityForDisplay,
+  isBufferTableIndex,
 } from "@/lib/zollhaus-tables";
 
 type WishDotStatus = "none" | "fulfilled" | "unmet" | "conflict";
@@ -108,17 +109,15 @@ function parseTableDropIndex(id: string): number | null {
   return Number.isFinite(idx) && idx >= 0 ? idx : null;
 }
 
-function OverCapacityDialog({
-  tableNumber,
-  seatsAfter,
-  groupSize,
+function AssignBlockedDialog({
+  blocked,
   onClose,
 }: {
-  tableNumber: number;
-  seatsAfter: number;
-  groupSize: number;
+  blocked: BlockedAssign;
   onClose: () => void;
 }) {
+  const isBuffer = blocked.kind === "buffer";
+
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
@@ -126,18 +125,33 @@ function OverCapacityDialog({
       role="presentation"
     >
       <div
-        className="felt-card w-full max-w-sm rounded-2xl border border-red-500/30 p-5 shadow-2xl animate-fade-in"
+        className={`felt-card w-full max-w-sm rounded-2xl border p-5 shadow-2xl animate-fade-in ${
+          isBuffer ? "border-gold/30" : "border-red-500/30"
+        }`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <h3 className="font-serif text-lg text-red-300 mb-2">
-          Tisch zu voll
+        <h3
+          className={`font-serif text-lg mb-2 ${
+            isBuffer ? "text-gold" : "text-red-300"
+          }`}
+        >
+          {isBuffer ? "Puffer-Tisch" : "Tisch zu voll"}
         </h3>
         <p className="text-cream-muted text-sm font-sans mb-4">
-          Tisch {tableNumber} hätte danach {seatsAfter} Plätze — maximal{" "}
-          {TABLE_CAPACITY_MAX_EXCEPTION} sind erlaubt. Die Gruppe braucht{" "}
-          {groupSize} Plätze.
+          {isBuffer ? (
+            <>
+              Tisch {blocked.tableNumber} bleibt als Puffer frei und kann nicht
+              belegt werden.
+            </>
+          ) : (
+            <>
+              Tisch {blocked.tableNumber} hätte danach {blocked.seatsAfter}{" "}
+              Plätze — maximal {TABLE_CAPACITY_MAX_EXCEPTION} sind erlaubt. Die
+              Gruppe braucht {blocked.groupSize} Plätze.
+            </>
+          )}
         </p>
         <div className="flex justify-end">
           <button
@@ -187,7 +201,9 @@ function TablePickerModal({
           freeSeats,
           remainingMax,
           seatsAfter,
-          fits: seatsAfter <= TABLE_CAPACITY_MAX_EXCEPTION,
+          fits:
+            !isBufferTableIndex(tableIdx) &&
+            seatsAfter <= TABLE_CAPACITY_MAX_EXCEPTION,
         };
       }).sort((a, b) => b.remainingMax - a.remainingMax),
     [tables, sourceTableIdx, entry]
@@ -223,6 +239,7 @@ function TablePickerModal({
         </div>
         <ul className="overflow-y-auto p-2 space-y-1">
           {options.map(({ tableNumber, tableIdx, table, freeSeats, remainingMax, fits }) => {
+            const isBuffer = isBufferTableIndex(tableIdx);
             const cap = getTableCapacityForDisplay(table.seatsUsed);
             const names =
               table.entries.length === 0
@@ -243,10 +260,12 @@ function TablePickerModal({
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-serif text-gold text-sm">
                       Tisch {tableNumber}
+                      {isBuffer ? " · Puffer" : ""}
                     </span>
                     <span className="text-[10px] text-cream-muted font-sans tabular-nums">
-                      {table.seatsUsed}/{cap} · {freeSeats} frei · {remainingMax}{" "}
-                      bis 9
+                      {isBuffer
+                        ? "Freihalten"
+                        : `${table.seatsUsed}/${cap} · ${freeSeats} frei · ${remainingMax} bis 9`}
                     </span>
                   </div>
                   <p className="text-[11px] text-cream-muted font-sans truncate mt-0.5">
@@ -340,7 +359,11 @@ function ManualTableRow({
   isDropTarget?: boolean;
   onUnassign: (entryId: string) => void;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: `table-${tableIdx}` });
+  const isBuffer = isBufferTableIndex(tableIdx);
+  const { setNodeRef, isOver } = useDroppable({
+    id: `table-${tableIdx}`,
+    disabled: isBuffer,
+  });
   const tableNumber = ZOLLHAUS_TABLE_NUMBERS[tableIdx];
   const cap = getTableCapacityForDisplay(table.seatsUsed);
   const freeSeats = getTableFreeSeats(table);
@@ -351,18 +374,29 @@ function ManualTableRow({
     <div
       ref={setNodeRef}
       className={`rounded-xl border px-3 py-2.5 transition-colors ${
-        hovered
-          ? "border-gold/50 bg-gold/10 ring-1 ring-gold/30"
-          : "border-gold/15 bg-surface-2/40"
+        isBuffer
+          ? "border-gray-600/40 bg-black/20 opacity-80"
+          : hovered
+            ? "border-gold/50 bg-gold/10 ring-1 ring-gold/30"
+            : "border-gold/15 bg-surface-2/40"
       }`}
     >
       <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="font-serif text-gold text-sm">Tisch {tableNumber}</span>
+        <span className="font-serif text-gold text-sm">
+          Tisch {tableNumber}
+          {isBuffer ? " · Puffer" : ""}
+        </span>
         <span className="text-[10px] text-cream-muted font-sans tabular-nums">
-          {table.seatsUsed}/{cap} · {freeSeats} frei · {remainingMax} bis 9
+          {isBuffer
+            ? "Freihalten"
+            : `${table.seatsUsed}/${cap} · ${freeSeats} frei · ${remainingMax} bis 9`}
         </span>
       </div>
-      {table.entries.length === 0 ? (
+      {isBuffer ? (
+        <p className="text-[11px] text-cream-muted/60 font-sans italic">
+          Puffer — bleibt für Umplanungen frei
+        </p>
+      ) : table.entries.length === 0 ? (
         <p className="text-[11px] text-cream-muted/60 font-sans italic">
           Noch leer — Gruppe hierher ziehen
         </p>
@@ -403,11 +437,17 @@ function ManualTableRow({
   );
 }
 
-type BlockedAssign = {
-  tableNumber: number;
-  seatsAfter: number;
-  groupSize: number;
-};
+type BlockedAssign =
+  | {
+      kind: "capacity";
+      tableNumber: number;
+      seatsAfter: number;
+      groupSize: number;
+    }
+  | {
+      kind: "buffer";
+      tableNumber: number;
+    };
 
 export function ManualAssignView({
   entries,
@@ -471,8 +511,14 @@ export function ManualAssignView({
         tableIdx
       );
 
+      if (isBufferTableIndex(tableIdx)) {
+        setBlockedAssign({ kind: "buffer", tableNumber });
+        return;
+      }
+
       if (wouldExceedMaxTableCapacity(table, entry, sourceIdx, tableIdx)) {
         setBlockedAssign({
+          kind: "capacity",
           tableNumber,
           seatsAfter,
           groupSize: entry.total_persons,
@@ -622,10 +668,8 @@ export function ManualAssignView({
       )}
 
       {blockedAssign && (
-        <OverCapacityDialog
-          tableNumber={blockedAssign.tableNumber}
-          seatsAfter={blockedAssign.seatsAfter}
-          groupSize={blockedAssign.groupSize}
+        <AssignBlockedDialog
+          blocked={blockedAssign}
           onClose={() => setBlockedAssign(null)}
         />
       )}

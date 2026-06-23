@@ -35,6 +35,7 @@ import {
   ZOLLHAUS_TABLE_NUMBERS,
   formatZollhausTableLabel,
   getTableCapacityForDisplay,
+  isBufferTableIndex,
 } from "@/lib/zollhaus-tables";
 
 const VIEWBOX = { w: 1800, h: 1280 };
@@ -45,18 +46,18 @@ const OCTAGON_CLIP =
 const COLORS = {
   gold: "#C9A227",
   goldStroke: "#a07d15",
-  blue: "#5b7fa6",
-  blueStroke: "#3d5876",
   red: "#c0392b",
   redStroke: "#922b21",
   emptyFill: "rgba(255,255,255,0.06)",
   emptyStroke: "#4b5563",
-  partialFill: "#d4a843",
-  partialStroke: "#a07d15",
+  occupiedFill: "#C9A227",
+  occupiedStroke: "#a07d15",
+  bufferFill: "rgba(255,255,255,0.04)",
+  bufferStroke: "#6b7280",
 };
 
-function getPolygonBadgeAnchor(points: string): { x: number; y: number } {
-  const coords = points.trim().split(/\s+/);
+function getPolygonBadgeAnchor(poly: TablePolygon): { x: number; y: number } {
+  const coords = poly.points.trim().split(/\s+/);
   let maxX = 0;
   let maxY = 0;
   for (const pair of coords) {
@@ -64,7 +65,11 @@ function getPolygonBadgeAnchor(points: string): { x: number; y: number } {
     if (x > maxX) maxX = x;
     if (y > maxY) maxY = y;
   }
-  return { x: maxX - 4, y: maxY + 6 };
+  const inset = 0.42;
+  return {
+    x: maxX + (poly.tx - maxX) * inset,
+    y: maxY + (poly.ty - maxY) * inset,
+  };
 }
 
 function getOccupancyBadgeStyle(table: AssignedTable): {
@@ -105,31 +110,26 @@ function parseFloorplanTableId(id: unknown): number | null {
 
 function getTableColors(
   table: AssignedTable,
-  allEntries: Entry[],
-  allTables: AssignedTable[],
-  unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"]
+  tableIdx: number
 ): {
   fill: string;
   stroke: string;
   textFill: string;
   interactive: boolean;
 } {
-  const wishCtx = buildWishContext(allEntries);
-  const rawSatisfaction = getTableSatisfaction(
-    table,
-    allEntries,
-    unfulfilledWishes,
-    wishCtx
-  );
-  const satisfaction =
-    table.manuallyResolved &&
-    (rawSatisfaction === "conflict" || rawSatisfaction === "overfull")
-      ? "partial"
-      : rawSatisfaction;
-  const overfull = !table.manuallyResolved && isTableOverfull(table);
+  if (isBufferTableIndex(tableIdx)) {
+    return {
+      fill: COLORS.bufferFill,
+      stroke: COLORS.bufferStroke,
+      textFill: "#9ca3af",
+      interactive: false,
+    };
+  }
+
+  const overfull = isTableOverfull(table);
   const isEmpty = table.entries.length === 0;
 
-  if (overfull || satisfaction === "conflict") {
+  if (overfull) {
     return {
       fill: COLORS.red,
       stroke: COLORS.redStroke,
@@ -145,26 +145,10 @@ function getTableColors(
       interactive: true,
     };
   }
-  if (satisfaction === "full") {
-    return {
-      fill: COLORS.gold,
-      stroke: COLORS.goldStroke,
-      textFill: "#1a1a1a",
-      interactive: true,
-    };
-  }
-  if (satisfaction === "partial") {
-    return {
-      fill: COLORS.partialFill,
-      stroke: COLORS.partialStroke,
-      textFill: "#1a1a1a",
-      interactive: true,
-    };
-  }
   return {
-    fill: COLORS.blue,
-    stroke: COLORS.blueStroke,
-    textFill: "#ffffff",
+    fill: COLORS.occupiedFill,
+    stroke: COLORS.occupiedStroke,
+    textFill: "#1a1a1a",
     interactive: true,
   };
 }
@@ -283,6 +267,7 @@ function FloorplanTablePolygon({
   poly,
   table,
   colors,
+  isBuffer,
   isDragging,
   isDropTarget,
   isDimmed,
@@ -292,6 +277,7 @@ function FloorplanTablePolygon({
   poly: TablePolygon;
   table: AssignedTable;
   colors: ReturnType<typeof getTableColors>;
+  isBuffer?: boolean;
   isDragging?: boolean;
   isDropTarget?: boolean;
   isDimmed?: boolean;
@@ -304,7 +290,7 @@ function FloorplanTablePolygon({
     isDragging || isDropTarget
       ? `translate(${poly.tx} ${poly.ty}) scale(${isDropTarget ? 1.08 : 1.1}) translate(${-poly.tx} ${-poly.ty})`
       : undefined;
-  const badgeAnchor = getPolygonBadgeAnchor(poly.points);
+  const badgeAnchor = getPolygonBadgeAnchor(poly);
   const badgeStyle = getOccupancyBadgeStyle(table);
   const seatCap = getTableCapacityForDisplay(table.seatsUsed);
   const occupancyLabel = `${table.seatsUsed}/${seatCap}`;
@@ -339,6 +325,22 @@ function FloorplanTablePolygon({
       >
         {tableNumber}
       </text>
+      {isBuffer ? (
+        <text
+          x={poly.tx}
+          y={poly.ty + 14}
+          fill="#9ca3af"
+          fontSize={8}
+          fontWeight={600}
+          textAnchor="middle"
+          dominantBaseline="central"
+          pointerEvents="none"
+          opacity={opacity}
+          fontFamily="system-ui, -apple-system, sans-serif"
+        >
+          Puffer
+        </text>
+      ) : (
       <g opacity={opacity} pointerEvents="none">
         <rect
           x={badgeAnchor.x - 17}
@@ -363,6 +365,7 @@ function FloorplanTablePolygon({
           {occupancyLabel}
         </text>
       </g>
+      )}
     </g>
   );
 }
@@ -371,10 +374,12 @@ function TableHoverTooltip({
   tableNumber,
   table,
   poly,
+  isBuffer,
 }: {
   tableNumber: number;
   table: AssignedTable;
   poly: TablePolygon;
+  isBuffer?: boolean;
 }) {
   const occupied = buildSeatGroups(table).filter(
     (g): g is Extract<SeatGroup, { type: "occupied" }> => g.type === "occupied"
@@ -392,8 +397,13 @@ function TableHoverTooltip({
       <div className="rounded-lg border border-gold/45 bg-[#1a1a22]/95 backdrop-blur-sm px-2.5 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.35)] min-w-[110px] max-w-[200px] animate-fade-in">
         <p className="text-[10px] text-gold font-sans font-medium mb-1 tabular-nums">
           Tisch {tableNumber}
+          {isBuffer ? " · Puffer" : ""}
         </p>
-        {occupied.length === 0 ? (
+        {isBuffer ? (
+          <p className="text-[11px] text-cream-muted font-sans">
+            Freihalten für Umplanungen
+          </p>
+        ) : occupied.length === 0 ? (
           <p className="text-[11px] text-cream-muted font-sans">Frei</p>
         ) : (
           <ul className="space-y-0.5">
@@ -424,6 +434,7 @@ function FloorplanTableHitArea({
   poly,
   swapMode,
   disabled,
+  bufferTable,
   isDropTarget,
   onTap,
   onHoverChange,
@@ -433,6 +444,7 @@ function FloorplanTableHitArea({
   poly: TablePolygon;
   swapMode: boolean;
   disabled?: boolean;
+  bufferTable?: boolean;
   isDropTarget?: boolean;
   onTap: () => void;
   onHoverChange: (tableIdx: number | null) => void;
@@ -441,9 +453,12 @@ function FloorplanTableHitArea({
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
     useDraggable({
       id,
-      disabled: disabled || swapMode,
+      disabled: disabled || swapMode || bufferTable,
     });
-  const { setNodeRef: setDropRef, isOver } = useDroppable({ id });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({
+    id,
+    disabled: bufferTable,
+  });
 
   const setRef = useCallback(
     (node: HTMLButtonElement | null) => {
@@ -720,6 +735,7 @@ export function Floorplan({
   const commitSwap = useCallback(
     (indexA: number, indexB: number) => {
       if (indexA === indexB) return;
+      if (isBufferTableIndex(indexA) || isBufferTableIndex(indexB)) return;
       onSwapTables(indexA, indexB);
       setSwapSourceIdx(null);
       setSwapPending(null);
@@ -778,6 +794,7 @@ export function Floorplan({
   const handleTableTap = useCallback(
     (tableIdx: number) => {
       if (skipTapAfterDragRef.current) return;
+      if (isBufferTableIndex(tableIdx) && swapMode) return;
 
       if (swapMode) {
         if (swapSourceIdx === null) {
@@ -856,12 +873,8 @@ export function Floorplan({
               <FloorplanStaticLayers />
 
               {planTables.map(({ tableNumber, tableIdx, poly, table }) => {
-                const colors = getTableColors(
-                  table,
-                  allEntries,
-                  tables,
-                  unfulfilledWishes
-                );
+                const colors = getTableColors(table, tableIdx);
+                const isBuffer = isBufferTableIndex(tableIdx);
 
                 const isDragging = activeDragIdx === tableIdx;
                 const isDropTarget =
@@ -880,6 +893,7 @@ export function Floorplan({
                     poly={poly}
                     table={table}
                     colors={colors}
+                    isBuffer={isBuffer}
                     isDragging={isDragging}
                     isDropTarget={isDropTarget}
                     isDimmed={isDimmed}
@@ -897,6 +911,7 @@ export function Floorplan({
                     tableNumber={tableNumber}
                     poly={poly}
                     swapMode={swapMode}
+                    bufferTable={isBufferTableIndex(tableIdx)}
                     disabled={isDragActive && activeDragIdx !== tableIdx}
                     isDropTarget={
                       overDropIdx === tableIdx && activeDragIdx !== tableIdx
@@ -912,6 +927,7 @@ export function Floorplan({
                   tableNumber={hoveredTable.tableNumber}
                   table={hoveredTable.table}
                   poly={hoveredTable.poly}
+                  isBuffer={isBufferTableIndex(hoveredTable.tableIdx)}
                 />
               )}
             </div>
@@ -922,10 +938,10 @@ export function Floorplan({
           {dragTable && dragTableNumber !== null && activeDragIdx !== null ? (
             <div className="pointer-events-none flex flex-col items-center gap-1.5">
               <div
-                className="w-14 h-14 flex items-center justify-center bg-[#5b7fa6] border-2 border-gold shadow-[0_8px_24px_rgba(201,162,39,0.45)] scale-110"
+                className="w-14 h-14 flex items-center justify-center bg-[#C9A227] border-2 border-gold shadow-[0_8px_24px_rgba(201,162,39,0.45)] scale-110"
                 style={{ clipPath: OCTAGON_CLIP }}
               >
-                <span className="font-sans font-bold text-white text-sm tabular-nums">
+                <span className="font-sans font-bold text-[#1a1a1a] text-sm tabular-nums">
                   {dragTableNumber}
                 </span>
               </div>
