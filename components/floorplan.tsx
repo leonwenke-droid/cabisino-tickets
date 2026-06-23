@@ -24,6 +24,7 @@ import {
   isTableOverfull,
   type AssignSeatsResult,
   type AssignedTable,
+  type SeatGroup,
 } from "@/lib/assign-seats";
 import {
   TABLE_POLYGONS,
@@ -51,11 +52,11 @@ const COLORS = {
   blueStroke: "#3d5876",
   red: "#c0392b",
   redStroke: "#922b21",
-  emptyFill: "#f5f5f5",
-  emptyStroke: "#cccccc",
+  emptyFill: "rgba(255,255,255,0.06)",
+  emptyStroke: "#4b5563",
   unusedFill: "none",
-  unusedStroke: "#bbbbbb",
-  unusedText: "#999999",
+  unusedStroke: "#4b5563",
+  unusedText: "#6b7280",
   partialFill: "#d4a843",
   partialStroke: "#a07d15",
 };
@@ -152,7 +153,7 @@ function getTableColors(
     return {
       fill: COLORS.emptyFill,
       stroke: COLORS.emptyStroke,
-      textFill: "#666666",
+      textFill: "#9ca3af",
       interactive: true,
     };
   }
@@ -181,24 +182,27 @@ function getTableColors(
 }
 
 function FloorplanStaticLayers() {
+  const wall = "#9ca3af";
+  const wallThin = "#6b7280";
+
   return (
     <>
       <path
         fill="none"
-        stroke="#111"
+        stroke={wall}
         strokeWidth={6}
         d="M 60 360 L 1260 350 L 1740 345"
       />
-      <path fill="none" stroke="#111" strokeWidth={6} d="M 1740 345 L 1745 760" />
-      <path fill="none" stroke="#111" strokeWidth={6} d="M 1745 760 L 1080 765" />
-      <path fill="none" stroke="#111" strokeWidth={6} d="M 760 765 L 60 770" />
-      <path fill="none" stroke="#111" strokeWidth={6} d="M 60 360 L 60 770" />
+      <path fill="none" stroke={wall} strokeWidth={6} d="M 1740 345 L 1745 760" />
+      <path fill="none" stroke={wall} strokeWidth={6} d="M 1745 760 L 1080 765" />
+      <path fill="none" stroke={wall} strokeWidth={6} d="M 760 765 L 60 770" />
+      <path fill="none" stroke={wall} strokeWidth={6} d="M 60 360 L 60 770" />
 
-      <path fill="none" stroke="#111" strokeWidth={3} d="M 30 340 L 110 340 L 110 460" />
-      <path fill="none" stroke="#111" strokeWidth={3} d="M 30 460 L 30 600" />
-      <path fill="none" stroke="#111" strokeWidth={3} d="M 30 600 L 110 600 L 110 720" />
-      <path fill="none" stroke="#111" strokeWidth={3} d="M 30 720 L 110 720" />
-      <path fill="none" stroke="#111" strokeWidth={3} d="M 110 360 L 210 460" />
+      <path fill="none" stroke={wallThin} strokeWidth={3} d="M 30 340 L 110 340 L 110 460" />
+      <path fill="none" stroke={wallThin} strokeWidth={3} d="M 30 460 L 30 600" />
+      <path fill="none" stroke={wallThin} strokeWidth={3} d="M 30 600 L 110 600 L 110 720" />
+      <path fill="none" stroke={wallThin} strokeWidth={3} d="M 30 720 L 110 720" />
+      <path fill="none" stroke={wallThin} strokeWidth={3} d="M 110 360 L 210 460" />
       <rect
         x={62}
         y={540}
@@ -227,39 +231,39 @@ function FloorplanStaticLayers() {
           width={130}
           height={115}
           fill="none"
-          stroke="#111"
+          stroke={wallThin}
           strokeWidth={3}
         />
-        <line stroke="#111" strokeWidth={1} x1={865} y1={660} x2={865} y2={755} />
-        <line stroke="#111" strokeWidth={1} x1={880} y1={660} x2={880} y2={755} />
-        <line stroke="#111" strokeWidth={1} x1={895} y1={660} x2={895} y2={755} />
-        <line stroke="#111" strokeWidth={1} x1={910} y1={660} x2={910} y2={755} />
-        <line stroke="#111" strokeWidth={1} x1={925} y1={660} x2={925} y2={755} />
-        <line stroke="#111" strokeWidth={1} x1={940} y1={660} x2={940} y2={755} />
-        <circle cx={850} cy={668} r={4} fill="none" stroke="#111" strokeWidth={1} />
-        <circle cx={850} cy={745} r={4} fill="none" stroke="#111" strokeWidth={1} />
+        <line stroke={wallThin} strokeWidth={1} x1={865} y1={660} x2={865} y2={755} />
+        <line stroke={wallThin} strokeWidth={1} x1={880} y1={660} x2={880} y2={755} />
+        <line stroke={wallThin} strokeWidth={1} x1={895} y1={660} x2={895} y2={755} />
+        <line stroke={wallThin} strokeWidth={1} x1={910} y1={660} x2={910} y2={755} />
+        <line stroke={wallThin} strokeWidth={1} x1={925} y1={660} x2={925} y2={755} />
+        <line stroke={wallThin} strokeWidth={1} x1={940} y1={660} x2={940} y2={755} />
+        <circle cx={850} cy={668} r={4} fill="none" stroke={wallThin} strokeWidth={1} />
+        <circle cx={850} cy={745} r={4} fill="none" stroke={wallThin} strokeWidth={1} />
       </g>
 
       <g>
         <path
           fill="none"
-          stroke="#111"
+          stroke={wallThin}
           strokeWidth={3}
           d="M 945 765 L 945 960 L 1070 960 L 1070 765"
         />
-        <line stroke="#111" strokeWidth={6} x1={985} y1={960} x2={1035} y2={960} />
+        <line stroke={wall} strokeWidth={6} x1={985} y1={960} x2={1035} y2={960} />
         <path
           fill="none"
-          stroke="#111"
+          stroke={wallThin}
           strokeWidth={1.5}
           d="M 960 850 Q 1010 850 1010 900"
         />
-        <line stroke="#111" strokeWidth={1.5} x1={960} y1={850} x2={1010} y2={900} />
+        <line stroke={wallThin} strokeWidth={1.5} x1={960} y1={850} x2={1010} y2={900} />
       </g>
 
       <path
         fill="none"
-        stroke="#111"
+        stroke={wallThin}
         strokeWidth={1.5}
         d="M 1745 430 Q 1700 460 1700 500"
       />
@@ -340,6 +344,57 @@ function FloorplanTablePolygon({
   );
 }
 
+function TableHoverTooltip({
+  tableNumber,
+  table,
+  poly,
+}: {
+  tableNumber: number;
+  table: AssignedTable;
+  poly: TablePolygon;
+}) {
+  const occupied = buildSeatGroups(table).filter(
+    (g): g is Extract<SeatGroup, { type: "occupied" }> => g.type === "occupied"
+  );
+
+  return (
+    <div
+      className="absolute z-40 pointer-events-none"
+      style={{
+        left: `${(poly.tx / VIEWBOX.w) * 100}%`,
+        top: `${(poly.ty / VIEWBOX.h) * 100}%`,
+        transform: "translate(-50%, calc(-100% - 10px))",
+      }}
+    >
+      <div className="rounded-lg border border-gold/45 bg-[#1a1a22]/95 backdrop-blur-sm px-2.5 py-2 shadow-[0_4px_16px_rgba(0,0,0,0.35)] min-w-[110px] max-w-[200px] animate-fade-in">
+        <p className="text-[10px] text-gold font-sans font-medium mb-1 tabular-nums">
+          Tisch {tableNumber}
+        </p>
+        {occupied.length === 0 ? (
+          <p className="text-[11px] text-cream-muted font-sans">Frei</p>
+        ) : (
+          <ul className="space-y-0.5">
+            {occupied.map((group) => (
+              <li
+                key={group.entry.id}
+                className="text-[11px] text-cream font-sans leading-snug"
+              >
+                {group.entry.vorname} {group.entry.nachname}
+                {group.guestLabels.length > 0 && (
+                  <span className="text-cream-muted">
+                    {" "}
+                    +{group.guestLabels.length}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FloorplanTableHitArea({
   tableIdx,
   tableNumber,
@@ -348,6 +403,7 @@ function FloorplanTableHitArea({
   disabled,
   isDropTarget,
   onTap,
+  onHoverChange,
 }: {
   tableIdx: number;
   tableNumber: number;
@@ -356,6 +412,7 @@ function FloorplanTableHitArea({
   disabled?: boolean;
   isDropTarget?: boolean;
   onTap: () => void;
+  onHoverChange: (tableIdx: number | null) => void;
 }) {
   const id = floorplanTableId(tableIdx);
   const { attributes, listeners, setNodeRef: setDragRef, isDragging } =
@@ -393,6 +450,10 @@ function FloorplanTableHitArea({
         clipPath: OCTAGON_CLIP,
       }}
       onClick={onTap}
+      onMouseEnter={() => onHoverChange(tableIdx)}
+      onMouseLeave={() => onHoverChange(null)}
+      onFocus={() => onHoverChange(tableIdx)}
+      onBlur={() => onHoverChange(null)}
       aria-label={`Tisch ${tableNumber}`}
       {...(swapMode ? {} : { ...listeners, ...attributes })}
     />
@@ -593,6 +654,7 @@ export function Floorplan({
   } | null>(null);
   const [activeDragIdx, setActiveDragIdx] = useState<number | null>(null);
   const [overDropIdx, setOverDropIdx] = useState<number | null>(null);
+  const [hoveredTableIdx, setHoveredTableIdx] = useState<number | null>(null);
   const skipTapAfterDragRef = useRef(false);
 
   const sensors = useSensors(
@@ -658,6 +720,7 @@ export function Floorplan({
     const idx = parseFloorplanTableId(event.active.id);
     setActiveDragIdx(idx);
     setOverDropIdx(null);
+    setHoveredTableIdx(null);
     setSelectedIndex(null);
   }, []);
 
@@ -732,6 +795,23 @@ export function Floorplan({
 
   const isDragActive = activeDragIdx !== null;
 
+  const hoveredTable = useMemo(() => {
+    if (hoveredTableIdx === null || isDragActive || selectedIndex !== null) {
+      return null;
+    }
+    const match = interactiveTables.find((t) => t.tableIdx === hoveredTableIdx);
+    if (!match) return null;
+    const table = tables[hoveredTableIdx];
+    if (!table) return null;
+    return { ...match, table };
+  }, [
+    hoveredTableIdx,
+    isDragActive,
+    selectedIndex,
+    interactiveTables,
+    tables,
+  ]);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -762,7 +842,7 @@ export function Floorplan({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="overflow-x-auto rounded-2xl border border-gold/25 bg-[#f8f6f0] touch-pan-x">
+        <div className="overflow-x-auto rounded-2xl border border-gold/25 touch-pan-x">
           <div className="relative min-w-[720px]">
             <svg
               viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
@@ -838,9 +918,18 @@ export function Floorplan({
                       overDropIdx === tableIdx && activeDragIdx !== tableIdx
                     }
                     onTap={() => handleTableTap(tableIdx)}
+                    onHoverChange={setHoveredTableIdx}
                   />
                 </div>
               ))}
+
+              {hoveredTable && (
+                <TableHoverTooltip
+                  tableNumber={hoveredTable.tableNumber}
+                  table={hoveredTable.table}
+                  poly={hoveredTable.poly}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -870,9 +959,8 @@ export function Floorplan({
       </DndContext>
 
       <p className="text-cream-muted/70 text-[11px] font-sans text-center">
-        Tisch ziehen und auf anderen Tisch legen zum Tauschen · Oder
-        Tauschen-Modus für Touch · Antippen für Details · Raster-Ansicht für
-        Einzelplätze
+        Tisch ziehen und auf anderen Tisch legen zum Tauschen · Hover für
+        Namen · Antippen für Details · Raster-Ansicht für Einzelplätze
       </p>
 
       {selectedTable && selectedIndex !== null && (
