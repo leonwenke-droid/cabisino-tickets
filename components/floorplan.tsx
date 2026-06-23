@@ -52,8 +52,9 @@ const COLORS = {
   emptyStroke: "#4b5563",
   occupiedFill: "#C9A227",
   occupiedStroke: "#a07d15",
-  bufferFill: "rgba(255,255,255,0.04)",
-  bufferStroke: "#6b7280",
+  bufferFill: "#1a4d32",
+  bufferStroke: "#34d399",
+  bufferText: "#d1fae5",
 };
 
 function getPolygonBadgeAnchor(poly: TablePolygon): { x: number; y: number } {
@@ -121,7 +122,7 @@ function getTableColors(
     return {
       fill: COLORS.bufferFill,
       stroke: COLORS.bufferStroke,
-      textFill: "#9ca3af",
+      textFill: COLORS.bufferText,
       interactive: false,
     };
   }
@@ -329,7 +330,7 @@ function FloorplanTablePolygon({
         <text
           x={poly.tx}
           y={poly.ty + 14}
-          fill="#9ca3af"
+          fill={COLORS.bufferText}
           fontSize={8}
           fontWeight={600}
           textAnchor="middle"

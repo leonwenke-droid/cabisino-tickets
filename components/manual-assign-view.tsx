@@ -375,14 +375,14 @@ function ManualTableRow({
       ref={setNodeRef}
       className={`rounded-xl border px-3 py-2.5 transition-colors ${
         isBuffer
-          ? "border-gray-600/40 bg-black/20 opacity-80"
+          ? "border-emerald-500/45 bg-emerald-500/10 ring-1 ring-emerald-500/20"
           : hovered
             ? "border-gold/50 bg-gold/10 ring-1 ring-gold/30"
             : "border-gold/15 bg-surface-2/40"
       }`}
     >
       <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="font-serif text-gold text-sm">
+        <span className={`font-serif text-sm ${isBuffer ? "text-emerald-300" : "text-gold"}`}>
           Tisch {tableNumber}
           {isBuffer ? " · Puffer" : ""}
         </span>
@@ -393,7 +393,7 @@ function ManualTableRow({
         </span>
       </div>
       {isBuffer ? (
-        <p className="text-[11px] text-cream-muted/60 font-sans italic">
+        <p className="text-[11px] text-emerald-300/70 font-sans italic">
           Puffer — bleibt für Umplanungen frei
         </p>
       ) : table.entries.length === 0 ? (
