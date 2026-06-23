@@ -11,7 +11,10 @@ export const TABLE_CAPACITY_MAX_EXCEPTION = 9;
 export const ZOLLHAUS_TABLE_COUNT = ZOLLHAUS_TABLE_NUMBERS.length;
 /** One table stays empty as a buffer for last-minute moves. */
 export const BUFFER_TABLE_COUNT = 1;
-export const BUFFER_TABLE_INDEX = ZOLLHAUS_TABLE_COUNT - BUFFER_TABLE_COUNT;
+export const BUFFER_TABLE_NUMBER = 12;
+export const BUFFER_TABLE_INDEX = ZOLLHAUS_TABLE_NUMBERS.indexOf(
+  BUFFER_TABLE_NUMBER
+);
 export const ASSIGNABLE_TABLE_COUNT = ZOLLHAUS_TABLE_COUNT - BUFFER_TABLE_COUNT;
 
 const ZOLLHAUS_TABLE_NUMBER_SET = new Set(ZOLLHAUS_TABLE_NUMBERS);
@@ -33,7 +36,7 @@ export function isBufferTableIndex(tableIndex: number): boolean {
 }
 
 export function getBufferTableNumber(): number {
-  return getZollhausTableNumber(BUFFER_TABLE_INDEX);
+  return BUFFER_TABLE_NUMBER;
 }
 
 export function getBaseVenueCapacity(): number {
