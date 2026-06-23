@@ -31,6 +31,7 @@ import {
   type TablePolygon,
 } from "@/lib/floorplan-table-polygons";
 import {
+  TABLE_CAPACITY,
   ZOLLHAUS_TABLE_NUMBERS,
   formatZollhausTableLabel,
   getTableCapacityForDisplay,
@@ -53,6 +54,44 @@ const COLORS = {
   partialFill: "#d4a843",
   partialStroke: "#a07d15",
 };
+
+function getPolygonBadgeAnchor(points: string): { x: number; y: number } {
+  const coords = points.trim().split(/\s+/);
+  let maxX = 0;
+  let maxY = 0;
+  for (const pair of coords) {
+    const [x, y] = pair.split(",").map(Number);
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return { x: maxX - 4, y: maxY + 6 };
+}
+
+function getOccupancyBadgeStyle(table: AssignedTable): {
+  stroke: string;
+  fill: string;
+  textFill: string;
+} {
+  if (table.seatsUsed === 0) {
+    return {
+      stroke: "#6b7280",
+      fill: "#1a1a22",
+      textFill: "#9ca3af",
+    };
+  }
+  if (table.seatsUsed > TABLE_CAPACITY) {
+    return {
+      stroke: "#c0392b",
+      fill: "#2a1210",
+      textFill: "#f0a8a0",
+    };
+  }
+  return {
+    stroke: "#C9A227",
+    fill: "#1a1810",
+    textFill: "#e8d48a",
+  };
+}
 
 function floorplanTableId(tableIdx: number): string {
   return `fp-table-${tableIdx}`;
@@ -242,6 +281,7 @@ function FloorplanStaticLayers() {
 function FloorplanTablePolygon({
   tableNumber,
   poly,
+  table,
   colors,
   isDragging,
   isDropTarget,
@@ -250,6 +290,7 @@ function FloorplanTablePolygon({
 }: {
   tableNumber: number;
   poly: TablePolygon;
+  table: AssignedTable;
   colors: ReturnType<typeof getTableColors>;
   isDragging?: boolean;
   isDropTarget?: boolean;
@@ -263,6 +304,10 @@ function FloorplanTablePolygon({
     isDragging || isDropTarget
       ? `translate(${poly.tx} ${poly.ty}) scale(${isDropTarget ? 1.08 : 1.1}) translate(${-poly.tx} ${-poly.ty})`
       : undefined;
+  const badgeAnchor = getPolygonBadgeAnchor(poly.points);
+  const badgeStyle = getOccupancyBadgeStyle(table);
+  const seatCap = getTableCapacityForDisplay(table.seatsUsed);
+  const occupancyLabel = `${table.seatsUsed}/${seatCap}`;
 
   return (
     <g transform={transform} style={{ transition: "opacity 0.15s" }}>
@@ -294,6 +339,30 @@ function FloorplanTablePolygon({
       >
         {tableNumber}
       </text>
+      <g opacity={opacity} pointerEvents="none">
+        <rect
+          x={badgeAnchor.x - 17}
+          y={badgeAnchor.y - 9}
+          width={34}
+          height={16}
+          rx={8}
+          fill={badgeStyle.fill}
+          stroke={badgeStyle.stroke}
+          strokeWidth={1.25}
+        />
+        <text
+          x={badgeAnchor.x}
+          y={badgeAnchor.y + 1}
+          fill={badgeStyle.textFill}
+          fontSize={10}
+          fontWeight={600}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontFamily="system-ui, -apple-system, sans-serif"
+        >
+          {occupancyLabel}
+        </text>
+      </g>
     </g>
   );
 }
@@ -809,6 +878,7 @@ export function Floorplan({
                     key={tableNumber}
                     tableNumber={tableNumber}
                     poly={poly}
+                    table={table}
                     colors={colors}
                     isDragging={isDragging}
                     isDropTarget={isDropTarget}
