@@ -32,12 +32,15 @@ import {
   syncManualEntryIds,
   isTableOverfull,
   findEntryTableIndex,
+  assignEntryToTable,
+  removeEntryFromTable,
   swapTableAssignments,
   type AssignSeatsResult,
   type AssignedTable,
 } from "@/lib/assign-seats";
 import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
 import { Floorplan } from "@/components/floorplan";
+import { ManualAssignView } from "@/components/manual-assign-view";
 import {
   ZOLLHAUS_TABLE_COUNT,
   formatZollhausTableLabel,
@@ -46,7 +49,7 @@ import {
 } from "@/lib/zollhaus-tables";
 import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place-cards-pdf";
 
-type TischeViewMode = "grid" | "floorplan";
+type TischeViewMode = "grid" | "floorplan" | "manual";
 
 const TISCHPLAN_STORAGE_KEY = "cabisino-tischplan";
 const LEGACY_TISCHPLAN_STORAGE_KEY = "kabisino-tischplan";
@@ -774,6 +777,7 @@ export function TischeTab({
         newTables[targetIdx].manuallyResolved = true;
       }
 
+      setSkipBaseResultSync(true);
       setCurrentTables(cloneTables(newTables));
       setManualEntryIds(syncManualEntryIds(newTables, baseAssignmentSignatures));
       persistTischplan(newTables);
@@ -797,12 +801,78 @@ export function TischeTab({
       newTables[indexA].manuallyResolved = true;
       newTables[indexB].manuallyResolved = true;
 
+      setSkipBaseResultSync(true);
       setCurrentTables(cloneTables(newTables));
       setManualEntryIds(syncManualEntryIds(newTables, baseAssignmentSignatures));
       persistTischplan(newTables);
     },
     [currentTables, baseResult.tables, baseAssignmentSignatures]
   );
+
+  const applyTableMutation = useCallback(
+    (newTables: AssignedTable[]) => {
+      setSkipBaseResultSync(true);
+      setCurrentTables(cloneTables(newTables));
+      setManualEntryIds(syncManualEntryIds(newTables, baseAssignmentSignatures));
+      persistTischplan(newTables);
+    },
+    [baseAssignmentSignatures]
+  );
+
+  const handleManualAssign = useCallback(
+    (entryId: string, targetIdx: number) => {
+      const entry = entries.find((e) => e.id === entryId);
+      if (!entry) return;
+
+      const tables = currentTables ?? baseResult.tables;
+      const sourceIdx = findEntryTableIndex(tables, entryId);
+      const newTables = assignEntryToTable(tables, entry, targetIdx);
+      if (!newTables) return;
+
+      if (sourceIdx >= 0) newTables[sourceIdx].manuallyResolved = true;
+      newTables[targetIdx].manuallyResolved = true;
+
+      applyTableMutation(newTables);
+    },
+    [entries, currentTables, baseResult.tables, applyTableMutation]
+  );
+
+  const handleManualUnassign = useCallback(
+    (entryId: string) => {
+      const tables = currentTables ?? baseResult.tables;
+      const sourceIdx = findEntryTableIndex(tables, entryId);
+      const newTables = removeEntryFromTable(tables, entryId);
+      if (!newTables || sourceIdx < 0) return;
+
+      newTables[sourceIdx].manuallyResolved = true;
+      applyTableMutation(newTables);
+    },
+    [currentTables, baseResult.tables, applyTableMutation]
+  );
+
+  const handleStartManualMode = useCallback(() => {
+    setSkipBaseResultSync(true);
+    const tables = normalizeAssignedTables(
+      cloneTables(currentTables ?? baseResult.tables)
+    );
+    const assigned = new Set<string>();
+    for (const table of tables) {
+      for (const entry of table.entries) assigned.add(entry.id);
+    }
+    setCurrentTables(tables);
+    setManualEntryIds(assigned);
+    persistTischplan(tables);
+    setViewMode("manual");
+  }, [currentTables, baseResult.tables]);
+
+  const handleClearAllAssignments = useCallback(() => {
+    clearPersistedTischplan();
+    setSkipBaseResultSync(true);
+    setPlanLoadedFromStorage(false);
+    setCurrentTables(createEmptyAssignedTables());
+    setManualEntryIds(new Set());
+    persistTischplan(createEmptyAssignedTables());
+  }, []);
 
   if (isLoading) {
     return (
@@ -875,6 +945,20 @@ export function TischeTab({
       {/* Settings bar */}
       <div className="felt-card rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-end gap-3">
         <div className="flex flex-wrap gap-2 sm:ml-auto w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={handleStartManualMode}
+            className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all"
+          >
+            Manuelle Zuordnung starten
+          </button>
+          <button
+            type="button"
+            onClick={handleClearAllAssignments}
+            className="py-2 px-4 rounded-xl border border-gray-500/30 text-gray-400 text-xs font-sans hover:text-cream hover:border-gray-400/50 transition-all"
+          >
+            Alles zurücksetzen
+          </button>
           <button
             type="button"
             onClick={handleRecalculate}
@@ -1044,6 +1128,17 @@ export function TischeTab({
         >
           Grundriss-Ansicht
         </button>
+        <button
+          type="button"
+          onClick={() => setViewMode("manual")}
+          className={`py-2 px-4 rounded-xl border text-xs font-sans transition-all ${
+            viewMode === "manual"
+              ? "border-gold/50 text-gold bg-gold/10"
+              : "border-gold/20 text-cream-muted hover:text-cream hover:border-gold/40"
+          }`}
+        >
+          Manuell zuordnen
+        </button>
       </div>
 
       {viewMode === "grid" ? (
@@ -1093,12 +1188,21 @@ export function TischeTab({
           ) : null}
         </DragOverlay>
       </DndContext>
-      ) : (
+      ) : viewMode === "floorplan" ? (
         <Floorplan
           tables={tables}
           allEntries={entries}
           unfulfilledWishes={displayResult.unfulfilledWishes}
           onSwapTables={handleSwapTables}
+        />
+      ) : (
+        <ManualAssignView
+          entries={entries}
+          tables={tables}
+          unfulfilledWishes={displayResult.unfulfilledWishes}
+          overCapacityIds={overCapacityIds}
+          onAssign={handleManualAssign}
+          onUnassign={handleManualUnassign}
         />
       )}
 

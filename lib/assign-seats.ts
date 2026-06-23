@@ -860,6 +860,77 @@ export function moveEntryToTable(
   return cloned;
 }
 
+/** Assign an entry to a table (from unassigned or another table). */
+export function assignEntryToTable(
+  tables: AssignedTable[],
+  entry: Entry,
+  targetTableIdx: number
+): AssignedTable[] | null {
+  if (targetTableIdx < 0 || targetTableIdx >= tables.length) return null;
+
+  const sourceIdx = findEntryTableIndex(tables, entry.id);
+  if (sourceIdx === targetTableIdx) return cloneTables(tables);
+
+  const cloned = cloneTables(tables);
+  if (sourceIdx >= 0) {
+    cloned[sourceIdx].entries = cloned[sourceIdx].entries.filter(
+      (e) => e.id !== entry.id
+    );
+    recalcTableSeats(cloned[sourceIdx]);
+  }
+
+  cloned[targetTableIdx].entries.push(entry);
+  recalcTableSeats(cloned[targetTableIdx]);
+  return cloned;
+}
+
+/** Remove an entry from its table back to the unassigned pool. */
+export function removeEntryFromTable(
+  tables: AssignedTable[],
+  entryId: string
+): AssignedTable[] | null {
+  const sourceIdx = findEntryTableIndex(tables, entryId);
+  if (sourceIdx < 0) return null;
+
+  const cloned = cloneTables(tables);
+  cloned[sourceIdx].entries = cloned[sourceIdx].entries.filter(
+    (e) => e.id !== entryId
+  );
+  recalcTableSeats(cloned[sourceIdx]);
+  return cloned;
+}
+
+export function getAssignedEntryIds(tables: AssignedTable[]): Set<string> {
+  const ids = new Set<string>();
+  for (const table of tables) {
+    for (const entry of table.entries) ids.add(entry.id);
+  }
+  return ids;
+}
+
+export function getTableFreeSeats(
+  table: AssignedTable,
+  excludeEntryId?: string
+): number {
+  let used = table.seatsUsed;
+  if (excludeEntryId) {
+    const excluded = table.entries.find((e) => e.id === excludeEntryId);
+    if (excluded) used -= excluded.total_persons;
+  }
+  return Math.max(0, TABLE_CAPACITY - used);
+}
+
+export function wouldExceedTableCapacity(
+  table: AssignedTable,
+  entry: Entry,
+  sourceTableIdx: number,
+  targetTableIdx: number
+): boolean {
+  let used = table.seatsUsed;
+  if (sourceTableIdx === targetTableIdx) used -= entry.total_persons;
+  return used + entry.total_persons > TABLE_CAPACITY;
+}
+
 /** Swap full group assignments between two tables (positions/numbers stay fixed). */
 export function swapTableAssignments(
   tables: AssignedTable[],
