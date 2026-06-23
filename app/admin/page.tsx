@@ -546,7 +546,11 @@ export default function AdminPage() {
 
         {/* ── TISCHE TAB ── */}
         {activeTab === "tische" && (
-          <TischeTab entries={entries} isLoading={isLoadingList} />
+          <TischeTab
+            entries={entries}
+            isLoading={isLoadingList}
+            onRefreshEntries={fetchEntries}
+          />
         )}
       </main>
       <Footer />

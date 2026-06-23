@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -35,6 +35,8 @@ import {
   assignEntryToTable,
   removeEntryFromTable,
   swapTableAssignments,
+  reconcileTablesWithEntries,
+  getUnassignedEntries,
   type AssignSeatsResult,
   type AssignedTable,
 } from "@/lib/assign-seats";
@@ -502,6 +504,44 @@ function PokerTableCard({
   );
 }
 
+function UnassignedEntriesPanel({ entries }: { entries: Entry[] }) {
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="felt-card rounded-2xl p-4 border border-gold/25">
+      <h3 className="font-serif text-sm text-cream mb-3">
+        Noch nicht zugewiesen ({entries.length})
+      </h3>
+      <p className="text-[11px] text-cream-muted font-sans mb-3">
+        Neue Anmeldungen erscheinen hier automatisch — bestehende Tischzuordnungen bleiben
+        unverändert.
+      </p>
+      <ul className="space-y-2 max-h-48 overflow-y-auto">
+        {entries.map((entry) => (
+          <li
+            key={entry.id}
+            className="flex items-center justify-between gap-3 rounded-xl border border-gold/15 bg-black/20 px-3 py-2"
+          >
+            <div className="min-w-0">
+              <p className="text-sm text-cream font-sans truncate">
+                {formatEntryLabel(entry)}
+              </p>
+              {entry.sitzwunsch?.trim() ? (
+                <p className="text-[10px] text-gold/55 italic truncate mt-0.5">
+                  → {truncateSitzwunsch(entry.sitzwunsch)}
+                </p>
+              ) : null}
+            </div>
+            <span className="text-[10px] text-cream-muted/70 font-sans tabular-nums flex-shrink-0">
+              {entry.total_persons} Pers.
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function WishLegendBar() {
   const items: { status: WishDotStatus; label: string }[] = [
     { status: "fulfilled", label: "Wunsch erfüllt" },
@@ -532,14 +572,18 @@ function WishLegendBar() {
 export function TischeTab({
   entries,
   isLoading,
+  onRefreshEntries,
 }: {
   entries: Entry[];
   isLoading?: boolean;
+  onRefreshEntries?: () => Promise<void>;
 }) {
   const [recalcKey, setRecalcKey] = useState(0);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportingPlaceCards, setExportingPlaceCards] = useState(false);
   const [exportingPlaceCardsZip, setExportingPlaceCardsZip] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const mountedRefreshRef = useRef(false);
   const [currentTables, setCurrentTables] = useState<AssignedTable[] | null>(null);
   const [manualEntryIds, setManualEntryIds] = useState<Set<string>>(new Set());
   const [baseAssignmentSignatures, setBaseAssignmentSignatures] = useState<
@@ -563,23 +607,51 @@ export function TischeTab({
   );
 
   useEffect(() => {
+    if (mountedRefreshRef.current || !onRefreshEntries) return;
+    mountedRefreshRef.current = true;
+    void onRefreshEntries();
+  }, [onRefreshEntries]);
+
+  useEffect(() => {
     if (planInitialized || entries.length === 0) return;
 
     const persisted = loadPersistedTischplan(entries);
     if (persisted) {
-      setCurrentTables(cloneTables(persisted));
+      const { tables: reconciled } = reconcileTablesWithEntries(persisted, entries);
+      setCurrentTables(cloneTables(reconciled));
       setSkipBaseResultSync(true);
       setPlanLoadedFromStorage(true);
+      persistTischplan(reconciled);
+    } else {
+      const result = assignSeats(entries);
+      setCurrentTables(cloneTables(result.tables));
+      setSkipBaseResultSync(true);
+      setBaseAssignmentSignatures(buildAssignmentSignatures(result.tables));
     }
     setPlanInitialized(true);
   }, [entries, planInitialized]);
 
   useEffect(() => {
     if (!planInitialized || skipBaseResultSync) return;
-    setCurrentTables(cloneTables(baseResult.tables));
+    const tables = cloneTables(baseResult.tables);
+    setCurrentTables(tables);
     setManualEntryIds(new Set());
-    setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
+    setBaseAssignmentSignatures(buildAssignmentSignatures(tables));
+    persistTischplan(tables);
+    setSkipBaseResultSync(true);
+    setPlanLoadedFromStorage(false);
   }, [baseResult, skipBaseResultSync, planInitialized]);
+
+  useEffect(() => {
+    if (!planInitialized) return;
+    setCurrentTables((prev) => {
+      if (!prev) return prev;
+      const { tables: reconciled, changed } = reconcileTablesWithEntries(prev, entries);
+      if (!changed) return prev;
+      persistTischplan(reconciled);
+      return cloneTables(reconciled);
+    });
+  }, [entries, planInitialized]);
 
   useEffect(() => {
     if (!skipBaseResultSync || !currentTables) return;
@@ -587,31 +659,7 @@ export function TischeTab({
       syncManualEntryIds(currentTables, buildAssignmentSignatures(baseResult.tables))
     );
     setBaseAssignmentSignatures(buildAssignmentSignatures(baseResult.tables));
-  }, [skipBaseResultSync, currentTables, baseResult.tables]);
-
-  useEffect(() => {
-    if (!skipBaseResultSync) return;
-    const byId = new Map(entries.map((e) => [e.id, e]));
-    setCurrentTables((prev) => {
-      if (!prev) return prev;
-      let changed = false;
-      const next = prev.map((table) => {
-        const freshEntries = table.entries
-          .map((e) => byId.get(e.id))
-          .filter((e): e is Entry => e !== undefined);
-        if (
-          freshEntries.length !== table.entries.length ||
-          freshEntries.some((e, i) => e !== table.entries[i])
-        ) {
-          changed = true;
-        }
-        const seatsUsed = freshEntries.reduce((s, e) => s + e.total_persons, 0);
-        if (seatsUsed !== table.seatsUsed) changed = true;
-        return { ...table, entries: freshEntries, seatsUsed };
-      });
-      return changed ? next : prev;
-    });
-  }, [entries, skipBaseResultSync]);
+  }, [skipBaseResultSync, currentTables, baseResult.tables, entries]);
 
   const displayResult = useMemo(() => {
     const tables = currentTables ?? baseResult.tables;
@@ -644,6 +692,11 @@ export function TischeTab({
 
   const layoutTables = currentTables ?? baseResult.tables;
 
+  const unassignedEntries = useMemo(
+    () => getUnassignedEntries(entries, layoutTables),
+    [entries, layoutTables]
+  );
+
   const hoveredTableIdx = useMemo(() => {
     if (!isTableDropId(overDropId)) return null;
     return parseTableDropIndex(overDropId);
@@ -670,11 +723,26 @@ export function TischeTab({
   );
 
   const handleRecalculate = useCallback(() => {
+    const ok = window.confirm(
+      "Das überschreibt alle aktuellen Zuordnungen. Fortfahren?"
+    );
+    if (!ok) return;
     clearPersistedTischplan();
     setSkipBaseResultSync(false);
     setPlanLoadedFromStorage(false);
+    setManualEntryIds(new Set());
     setRecalcKey((k) => k + 1);
   }, []);
+
+  const handleRefresh = useCallback(async () => {
+    if (!onRefreshEntries) return;
+    setIsRefreshing(true);
+    try {
+      await onRefreshEntries();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [onRefreshEntries]);
 
   const handleClearPlan = useCallback(() => {
     clearPersistedTischplan();
@@ -929,7 +997,7 @@ export function TischeTab({
               onClick={handleRecalculate}
               className="py-2 px-4 rounded-xl border border-gold/20 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
             >
-              Neu berechnen
+              Neu berechnen (überschreibt Zuordnungen)
             </button>
             <button
               type="button"
@@ -945,6 +1013,16 @@ export function TischeTab({
       {/* Settings bar */}
       <div className="felt-card rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-end gap-3">
         <div className="flex flex-wrap gap-2 sm:ml-auto w-full sm:w-auto">
+          {onRefreshEntries ? (
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isRefreshing || isLoading}
+              className="py-2 px-4 rounded-xl border border-emerald-500/30 text-emerald-300 text-xs font-sans hover:bg-emerald-500/10 transition-all disabled:opacity-50"
+            >
+              {isRefreshing ? "Aktualisiert…" : "Aktualisieren"}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={handleStartManualMode}
@@ -964,7 +1042,7 @@ export function TischeTab({
             onClick={handleRecalculate}
             className="py-2 px-4 rounded-xl border border-gold/20 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
           >
-            Neu berechnen
+            Neu berechnen (überschreibt Zuordnungen)
           </button>
           <button
             type="button"
@@ -1142,6 +1220,8 @@ export function TischeTab({
       </div>
 
       {viewMode === "grid" ? (
+      <>
+      <UnassignedEntriesPanel entries={unassignedEntries} />
       <DndContext
         sensors={sensors}
         onDragStart={handleDragStart}
@@ -1188,6 +1268,7 @@ export function TischeTab({
           ) : null}
         </DragOverlay>
       </DndContext>
+      </>
       ) : viewMode === "floorplan" ? (
         <Floorplan
           tables={tables}

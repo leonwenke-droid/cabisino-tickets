@@ -908,6 +908,65 @@ export function getAssignedEntryIds(tables: AssignedTable[]): Set<string> {
   return ids;
 }
 
+/** Entries not placed on any table, largest groups first. */
+export function getUnassignedEntries(
+  entries: Entry[],
+  tables: AssignedTable[]
+): Entry[] {
+  const assigned = getAssignedEntryIds(tables);
+  return entries
+    .filter((e) => !assigned.has(e.id))
+    .sort((a, b) => b.total_persons - a.total_persons);
+}
+
+function normalizeTableCount(tables: AssignedTable[]): AssignedTable[] {
+  if (tables.length === ZOLLHAUS_TABLE_COUNT) return tables;
+  if (tables.length < ZOLLHAUS_TABLE_COUNT) {
+    return [
+      ...tables,
+      ...Array.from({ length: ZOLLHAUS_TABLE_COUNT - tables.length }, () => ({
+        entries: [],
+        seatsUsed: 0,
+      })),
+    ];
+  }
+  return tables.slice(0, ZOLLHAUS_TABLE_COUNT);
+}
+
+/**
+ * Sync table assignments with the current Supabase entry list:
+ * refresh entry data, drop cancelled registrations, leave new entries unassigned.
+ */
+export function reconcileTablesWithEntries(
+  tables: AssignedTable[],
+  entries: Entry[]
+): { tables: AssignedTable[]; changed: boolean } {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const normalized = normalizeTableCount(tables);
+  let changed = normalized.length !== tables.length;
+
+  const next = normalized.map((table) => {
+    const beforeIds = table.entries.map((e) => e.id).join(",");
+    const freshEntries = table.entries
+      .map((e) => byId.get(e.id))
+      .filter((e): e is Entry => e !== undefined);
+    const seatsUsed = freshEntries.reduce((s, e) => s + e.total_persons, 0);
+    const afterIds = freshEntries.map((e) => e.id).join(",");
+
+    if (
+      beforeIds !== afterIds ||
+      seatsUsed !== table.seatsUsed ||
+      freshEntries.some((e, i) => e !== table.entries[i])
+    ) {
+      changed = true;
+      return { ...table, entries: freshEntries, seatsUsed };
+    }
+    return table;
+  });
+
+  return { tables: next, changed };
+}
+
 export function getTableFreeSeats(
   table: AssignedTable,
   excludeEntryId?: string

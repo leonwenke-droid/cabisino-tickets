@@ -17,7 +17,7 @@ import type { Entry } from "@/lib/supabase";
 import {
   abbreviateName,
   formatEntryLabel,
-  getAssignedEntryIds,
+  getUnassignedEntries,
   getEntryChipStatus,
   getTableFreeSeats,
   wouldExceedTableCapacity,
@@ -422,19 +422,14 @@ export function ManualAssignView({
     })
   );
 
-  const assignedIds = useMemo(() => getAssignedEntryIds(tables), [tables]);
-
   const unassignedEntries = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return entries
-      .filter((e) => !assignedIds.has(e.id))
-      .filter((e) => {
-        if (!q) return true;
-        const hay = `${e.vorname} ${e.nachname} ${e.sitzwunsch ?? ""}`.toLowerCase();
-        return hay.includes(q);
-      })
-      .sort((a, b) => b.total_persons - a.total_persons);
-  }, [entries, assignedIds, search]);
+    return getUnassignedEntries(entries, tables).filter((e) => {
+      if (!q) return true;
+      const hay = `${e.vorname} ${e.nachname} ${e.sitzwunsch ?? ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [entries, tables, search]);
 
   const pickerEntry = pickerEntryId
     ? entries.find((e) => e.id === pickerEntryId) ?? null
