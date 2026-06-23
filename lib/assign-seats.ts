@@ -979,15 +979,52 @@ export function getTableFreeSeats(
   return Math.max(0, TABLE_CAPACITY - used);
 }
 
+/** Remaining seats until the flex maximum of 9 per table. */
+export function getTableRemainingCapacity(
+  table: AssignedTable,
+  excludeEntryId?: string
+): number {
+  let used = table.seatsUsed;
+  if (excludeEntryId) {
+    const excluded = table.entries.find((e) => e.id === excludeEntryId);
+    if (excluded) used -= excluded.total_persons;
+  }
+  return Math.max(0, TABLE_CAPACITY_MAX_EXCEPTION - used);
+}
+
+export function getTableSeatsAfterAssign(
+  table: AssignedTable,
+  entry: Entry,
+  sourceTableIdx: number,
+  targetTableIdx: number
+): number {
+  let used = table.seatsUsed;
+  if (sourceTableIdx === targetTableIdx) used -= entry.total_persons;
+  return used + entry.total_persons;
+}
+
 export function wouldExceedTableCapacity(
   table: AssignedTable,
   entry: Entry,
   sourceTableIdx: number,
   targetTableIdx: number
 ): boolean {
-  let used = table.seatsUsed;
-  if (sourceTableIdx === targetTableIdx) used -= entry.total_persons;
-  return used + entry.total_persons > TABLE_CAPACITY;
+  return (
+    getTableSeatsAfterAssign(table, entry, sourceTableIdx, targetTableIdx) >
+    TABLE_CAPACITY
+  );
+}
+
+export function wouldExceedMaxTableCapacity(
+  table: AssignedTable,
+  entry: Entry,
+  sourceTableIdx: number,
+  targetTableIdx: number
+): boolean {
+  return (
+    getTableSeatsAfterAssign(table, entry, sourceTableIdx, targetTableIdx) >
+    TABLE_CAPACITY_MAX_EXCEPTION
+  );
 }
 
 /** Swap full group assignments between two tables (positions/numbers stay fixed). */

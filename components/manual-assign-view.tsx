@@ -17,10 +17,13 @@ import type { Entry } from "@/lib/supabase";
 import {
   abbreviateName,
   formatEntryLabel,
+  findEntryTableIndex,
   getUnassignedEntries,
   getEntryChipStatus,
   getTableFreeSeats,
-  wouldExceedTableCapacity,
+  getTableRemainingCapacity,
+  getTableSeatsAfterAssign,
+  wouldExceedMaxTableCapacity,
   type AssignSeatsResult,
   type AssignedTable,
 } from "@/lib/assign-seats";
@@ -105,50 +108,44 @@ function parseTableDropIndex(id: string): number | null {
   return Number.isFinite(idx) && idx >= 0 ? idx : null;
 }
 
-function OverfillConfirmDialog({
+function OverCapacityDialog({
   tableNumber,
-  freeSeats,
+  seatsAfter,
   groupSize,
-  onConfirm,
-  onCancel,
+  onClose,
 }: {
   tableNumber: number;
-  freeSeats: number;
+  seatsAfter: number;
   groupSize: number;
-  onConfirm: () => void;
-  onCancel: () => void;
+  onClose: () => void;
 }) {
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-      onClick={onCancel}
+      onClick={onClose}
       role="presentation"
     >
       <div
-        className="felt-card w-full max-w-sm rounded-2xl border border-gold/30 p-5 shadow-2xl animate-fade-in"
+        className="felt-card w-full max-w-sm rounded-2xl border border-red-500/30 p-5 shadow-2xl animate-fade-in"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-        <h3 className="font-serif text-lg text-gold mb-2">Tisch überfüllen?</h3>
+        <h3 className="font-serif text-lg text-red-300 mb-2">
+          Tisch zu voll
+        </h3>
         <p className="text-cream-muted text-sm font-sans mb-4">
-          Tisch {tableNumber} hat nur {freeSeats} freie Plätze (bis 8), die Gruppe
-          braucht {groupSize}. Trotzdem zuweisen (überfüllt)?
+          Tisch {tableNumber} hätte danach {seatsAfter} Plätze — maximal{" "}
+          {TABLE_CAPACITY_MAX_EXCEPTION} sind erlaubt. Die Gruppe braucht{" "}
+          {groupSize} Plätze.
         </p>
-        <div className="flex gap-2 justify-end">
+        <div className="flex justify-end">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={onClose}
             className="px-4 py-2 rounded-xl text-sm font-sans text-cream-muted hover:text-cream border border-gold/20"
           >
-            Abbrechen
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="px-4 py-2 rounded-xl text-sm font-sans bg-red-500/20 text-red-300 border border-red-500/40 hover:bg-red-500/30"
-          >
-            Trotzdem zuweisen
+            OK
           </button>
         </div>
       </div>
@@ -173,14 +170,27 @@ function TablePickerModal({
     () =>
       ZOLLHAUS_TABLE_NUMBERS.map((tableNumber, tableIdx) => {
         const table = tables[tableIdx];
-        const freeSeats = getTableFreeSeats(
+        const excludeId =
+          sourceTableIdx === tableIdx ? entry.id : undefined;
+        const freeSeats = getTableFreeSeats(table, excludeId);
+        const remainingMax = getTableRemainingCapacity(table, excludeId);
+        const seatsAfter = getTableSeatsAfterAssign(
           table,
-          sourceTableIdx === tableIdx ? entry.id : undefined
+          entry,
+          sourceTableIdx,
+          tableIdx
         );
-        const remainingMax = TABLE_CAPACITY_MAX_EXCEPTION - table.seatsUsed;
-        return { tableNumber, tableIdx, table, freeSeats, remainingMax };
-      }).sort((a, b) => b.freeSeats - a.freeSeats),
-    [tables, sourceTableIdx, entry.id]
+        return {
+          tableNumber,
+          tableIdx,
+          table,
+          freeSeats,
+          remainingMax,
+          seatsAfter,
+          fits: seatsAfter <= TABLE_CAPACITY_MAX_EXCEPTION,
+        };
+      }).sort((a, b) => b.remainingMax - a.remainingMax),
+    [tables, sourceTableIdx, entry]
   );
 
   return (
@@ -212,7 +222,7 @@ function TablePickerModal({
           </button>
         </div>
         <ul className="overflow-y-auto p-2 space-y-1">
-          {options.map(({ tableNumber, tableIdx, table, freeSeats }) => {
+          {options.map(({ tableNumber, tableIdx, table, freeSeats, remainingMax, fits }) => {
             const cap = getTableCapacityForDisplay(table.seatsUsed);
             const names =
               table.entries.length === 0
@@ -223,14 +233,20 @@ function TablePickerModal({
                 <button
                   type="button"
                   onClick={() => onSelect(tableIdx)}
-                  className="w-full text-left rounded-xl border border-gold/15 hover:border-gold/40 hover:bg-gold/5 px-3 py-2.5 transition-colors"
+                  disabled={!fits}
+                  className={`w-full text-left rounded-xl border px-3 py-2.5 transition-colors ${
+                    fits
+                      ? "border-gold/15 hover:border-gold/40 hover:bg-gold/5"
+                      : "border-gray-600/30 opacity-50 cursor-not-allowed"
+                  }`}
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-serif text-gold text-sm">
                       Tisch {tableNumber}
                     </span>
                     <span className="text-[10px] text-cream-muted font-sans tabular-nums">
-                      {table.seatsUsed}/{cap} · {freeSeats} frei
+                      {table.seatsUsed}/{cap} · {freeSeats} frei · {remainingMax}{" "}
+                      bis 9
                     </span>
                   </div>
                   <p className="text-[11px] text-cream-muted font-sans truncate mt-0.5">
@@ -328,6 +344,7 @@ function ManualTableRow({
   const tableNumber = ZOLLHAUS_TABLE_NUMBERS[tableIdx];
   const cap = getTableCapacityForDisplay(table.seatsUsed);
   const freeSeats = getTableFreeSeats(table);
+  const remainingMax = getTableRemainingCapacity(table);
   const hovered = isOver || isDropTarget;
 
   return (
@@ -342,7 +359,7 @@ function ManualTableRow({
       <div className="flex items-center justify-between gap-2 mb-1.5">
         <span className="font-serif text-gold text-sm">Tisch {tableNumber}</span>
         <span className="text-[10px] text-cream-muted font-sans tabular-nums">
-          {table.seatsUsed}/{cap} · {freeSeats} frei
+          {table.seatsUsed}/{cap} · {freeSeats} frei · {remainingMax} bis 9
         </span>
       </div>
       {table.entries.length === 0 ? (
@@ -386,12 +403,10 @@ function ManualTableRow({
   );
 }
 
-type PendingAssign = {
-  entryId: string;
-  tableIdx: number;
-  freeSeats: number;
-  groupSize: number;
+type BlockedAssign = {
   tableNumber: number;
+  seatsAfter: number;
+  groupSize: number;
 };
 
 export function ManualAssignView({
@@ -411,7 +426,9 @@ export function ManualAssignView({
 }) {
   const [search, setSearch] = useState("");
   const [pickerEntryId, setPickerEntryId] = useState<string | null>(null);
-  const [pendingAssign, setPendingAssign] = useState<PendingAssign | null>(null);
+  const [blockedAssign, setBlockedAssign] = useState<BlockedAssign | null>(
+    null
+  );
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [overDropIdx, setOverDropIdx] = useState<number | null>(null);
 
@@ -445,30 +462,20 @@ export function ManualAssignView({
       if (!entry) return;
 
       const table = tables[tableIdx];
-      const sourceIdx = tables.findIndex((t) =>
-        t.entries.some((e) => e.id === entryId)
-      );
+      const sourceIdx = findEntryTableIndex(tables, entryId);
       const tableNumber = ZOLLHAUS_TABLE_NUMBERS[tableIdx];
+      const seatsAfter = getTableSeatsAfterAssign(
+        table,
+        entry,
+        sourceIdx,
+        tableIdx
+      );
 
-      if (
-        wouldExceedTableCapacity(table, entry, sourceIdx, tableIdx)
-      ) {
-        const after =
-          (sourceIdx === tableIdx
-            ? table.seatsUsed - entry.total_persons
-            : table.seatsUsed) + entry.total_persons;
-        if (after > TABLE_CAPACITY_MAX_EXCEPTION) return;
-
-        const freeSeats = getTableFreeSeats(
-          table,
-          sourceIdx === tableIdx ? entry.id : undefined
-        );
-        setPendingAssign({
-          entryId,
-          tableIdx,
-          freeSeats,
-          groupSize: entry.total_persons,
+      if (wouldExceedMaxTableCapacity(table, entry, sourceIdx, tableIdx)) {
+        setBlockedAssign({
           tableNumber,
+          seatsAfter,
+          groupSize: entry.total_persons,
         });
         return;
       }
@@ -567,7 +574,8 @@ export function ManualAssignView({
                 Tische ({ZOLLHAUS_TABLE_NUMBERS.length})
               </h3>
               <p className="text-[10px] text-cream-muted/70 font-sans mt-1">
-                Nach Tischnummer · Gruppe auf Zeile ziehen
+                Nach Tischnummer · bis 9 Plätze pro Tisch · Gruppe auf Zeile
+                ziehen
               </p>
             </div>
             <ul className="flex-1 overflow-y-auto p-3 space-y-2 max-h-[60vh] lg:max-h-none">
@@ -613,17 +621,12 @@ export function ManualAssignView({
         />
       )}
 
-      {pendingAssign && (
-        <OverfillConfirmDialog
-          tableNumber={pendingAssign.tableNumber}
-          freeSeats={pendingAssign.freeSeats}
-          groupSize={pendingAssign.groupSize}
-          onConfirm={() => {
-            onAssign(pendingAssign.entryId, pendingAssign.tableIdx);
-            setPendingAssign(null);
-            setPickerEntryId(null);
-          }}
-          onCancel={() => setPendingAssign(null)}
+      {blockedAssign && (
+        <OverCapacityDialog
+          tableNumber={blockedAssign.tableNumber}
+          seatsAfter={blockedAssign.seatsAfter}
+          groupSize={blockedAssign.groupSize}
+          onClose={() => setBlockedAssign(null)}
         />
       )}
     </>
