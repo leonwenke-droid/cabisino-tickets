@@ -976,7 +976,7 @@ export function TischeTab({
         <div className="rounded-2xl border border-red-500/35 bg-red-500/10 px-4 py-3 text-red-300 text-xs font-sans leading-relaxed">
           <span className="mr-1">⚠</span>
           Kapazität überschritten: {totalPersons} Personen, aber nur {maxVenueCapacity}{" "}
-          Plätze verfügbar ({ZOLLHAUS_TABLE_COUNT} Tische × max. 9).
+          Plätze verfügbar ({ZOLLHAUS_TABLE_COUNT} Tische × 8, max. 9 pro Tisch).
         </div>
       )}
 

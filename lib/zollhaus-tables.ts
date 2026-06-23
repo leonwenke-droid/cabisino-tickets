@@ -1,22 +1,31 @@
-/** Tables 1–20 are roped off; this event uses tables 21 through 60 (40 tables). */
-export const ZOLLHAUS_FIRST_TABLE = 21;
-export const ZOLLHAUS_LAST_TABLE = 60;
-
-export const ZOLLHAUS_TABLE_NUMBERS: number[] = Array.from(
-  { length: ZOLLHAUS_LAST_TABLE - ZOLLHAUS_FIRST_TABLE + 1 },
-  (_, i) => ZOLLHAUS_FIRST_TABLE + i
-);
+/** All physically existing tables in the Zollhaus (no 25–27, 29–30, 33–35, 55–57). */
+export const ZOLLHAUS_TABLE_NUMBERS: number[] = [
+  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
+  21, 22, 23, 24, 28, 31, 32,
+  36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+  58, 59, 60,
+];
 
 export const TABLE_CAPACITY = 8;
 export const TABLE_CAPACITY_MAX_EXCEPTION = 9;
 export const ZOLLHAUS_TABLE_COUNT = ZOLLHAUS_TABLE_NUMBERS.length;
 
+const ZOLLHAUS_TABLE_NUMBER_SET = new Set(ZOLLHAUS_TABLE_NUMBERS);
+
+export function isZollhausTableNumber(tableNumber: number): boolean {
+  return ZOLLHAUS_TABLE_NUMBER_SET.has(tableNumber);
+}
+
 export function getZollhausTableNumber(tableIndex: number): number {
-  return ZOLLHAUS_TABLE_NUMBERS[tableIndex] ?? ZOLLHAUS_FIRST_TABLE + tableIndex;
+  return ZOLLHAUS_TABLE_NUMBERS[tableIndex] ?? tableIndex + 1;
 }
 
 export function formatZollhausTableLabel(tableIndex: number): string {
   return `Tisch ${getZollhausTableNumber(tableIndex)}`;
+}
+
+export function getBaseVenueCapacity(): number {
+  return ZOLLHAUS_TABLE_COUNT * TABLE_CAPACITY;
 }
 
 export function getMaxVenueCapacity(): number {

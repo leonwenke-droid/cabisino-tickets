@@ -31,14 +31,10 @@ import {
   type TablePolygon,
 } from "@/lib/floorplan-table-polygons";
 import {
-  ZOLLHAUS_FIRST_TABLE,
   ZOLLHAUS_TABLE_NUMBERS,
   formatZollhausTableLabel,
   getTableCapacityForDisplay,
 } from "@/lib/zollhaus-tables";
-
-/** Show roped-off tables 1–20 as faint outlines on the plan. */
-export const SHOW_UNUSED_TABLES = true;
 
 const VIEWBOX = { w: 1800, h: 1280 };
 
@@ -54,9 +50,6 @@ const COLORS = {
   redStroke: "#922b21",
   emptyFill: "rgba(255,255,255,0.06)",
   emptyStroke: "#4b5563",
-  unusedFill: "none",
-  unusedStroke: "#4b5563",
-  unusedText: "#6b7280",
   partialFill: "#d4a843",
   partialStroke: "#a07d15",
 };
@@ -71,26 +64,8 @@ function parseFloorplanTableId(id: unknown): number | null {
   return Number.isFinite(idx) && idx >= 0 ? idx : null;
 }
 
-function tableNumberToIndex(tableNumber: number): number | null {
-  const idx = ZOLLHAUS_TABLE_NUMBERS.indexOf(tableNumber);
-  return idx >= 0 ? idx : null;
-}
-
-function isUsableTableNumber(tableNumber: number): boolean {
-  return tableNumber >= ZOLLHAUS_FIRST_TABLE;
-}
-
-function getPrimaryGroupLabel(
-  table: AssignedTable | null,
-  tableNumber: number
-): string {
-  if (!table || table.entries.length === 0) return `Tisch ${tableNumber}`;
-  return abbreviateName(table.entries[0]);
-}
-
 function getTableColors(
-  tableNumber: number,
-  table: AssignedTable | null,
+  table: AssignedTable,
   allEntries: Entry[],
   allTables: AssignedTable[],
   unfulfilledWishes: AssignSeatsResult["unfulfilledWishes"]
@@ -100,32 +75,6 @@ function getTableColors(
   textFill: string;
   interactive: boolean;
 } {
-  if (tableNumber < ZOLLHAUS_FIRST_TABLE) {
-    if (!SHOW_UNUSED_TABLES) {
-      return {
-        fill: "transparent",
-        stroke: "transparent",
-        textFill: "transparent",
-        interactive: false,
-      };
-    }
-    return {
-      fill: COLORS.unusedFill,
-      stroke: COLORS.unusedStroke,
-      textFill: COLORS.unusedText,
-      interactive: false,
-    };
-  }
-
-  if (!table) {
-    return {
-      fill: COLORS.emptyFill,
-      stroke: COLORS.emptyStroke,
-      textFill: "#888888",
-      interactive: false,
-    };
-  }
-
   const wishCtx = buildWishContext(allEntries);
   const rawSatisfaction = getTableSatisfaction(
     table,
@@ -179,6 +128,14 @@ function getTableColors(
     textFill: "#ffffff",
     interactive: true,
   };
+}
+
+function getPrimaryGroupLabel(
+  table: AssignedTable | null,
+  tableNumber: number
+): string {
+  if (!table || table.entries.length === 0) return `Tisch ${tableNumber}`;
+  return abbreviateName(table.entries[0]);
 }
 
 function FloorplanStaticLayers() {
@@ -314,9 +271,6 @@ function FloorplanTablePolygon({
         fill={colors.fill}
         stroke={stroke}
         strokeWidth={strokeWidth}
-        strokeDasharray={
-          tableNumber < ZOLLHAUS_FIRST_TABLE ? "4 3" : undefined
-        }
         opacity={opacity}
         style={
           isDragging
@@ -664,27 +618,15 @@ export function Floorplan({
     })
   );
 
-  const tableNumbers = useMemo(
+  const planTables = useMemo(
     () =>
-      Object.keys(TABLE_POLYGONS)
-        .map(Number)
-        .sort((a, b) => a - b),
-    []
-  );
-
-  const interactiveTables = useMemo(
-    () =>
-      tableNumbers
-        .map((tableNumber) => {
-          const tableIdx = tableNumberToIndex(tableNumber);
-          const poly = TABLE_POLYGONS[tableNumber];
-          if (!poly || tableIdx === null || !isUsableTableNumber(tableNumber)) {
-            return null;
-          }
-          return { tableNumber, tableIdx, poly };
-        })
-        .filter((t): t is NonNullable<typeof t> => t !== null),
-    [tableNumbers]
+      ZOLLHAUS_TABLE_NUMBERS.flatMap((tableNumber, tableIdx) => {
+        const poly = TABLE_POLYGONS[tableNumber];
+        const table = tables[tableIdx];
+        if (!poly || !table) return [];
+        return [{ tableNumber, tableIdx, poly, table }];
+      }),
+    [tables]
   );
 
   useEffect(() => {
@@ -799,18 +741,8 @@ export function Floorplan({
     if (hoveredTableIdx === null || isDragActive || selectedIndex !== null) {
       return null;
     }
-    const match = interactiveTables.find((t) => t.tableIdx === hoveredTableIdx);
-    if (!match) return null;
-    const table = tables[hoveredTableIdx];
-    if (!table) return null;
-    return { ...match, table };
-  }, [
-    hoveredTableIdx,
-    isDragActive,
-    selectedIndex,
-    interactiveTables,
-    tables,
-  ]);
+    return planTables.find((t) => t.tableIdx === hoveredTableIdx) ?? null;
+  }, [hoveredTableIdx, isDragActive, selectedIndex, planTables]);
 
   return (
     <div className="space-y-3">
@@ -854,41 +786,23 @@ export function Floorplan({
             >
               <FloorplanStaticLayers />
 
-              {tableNumbers.map((tableNumber) => {
-                const poly = TABLE_POLYGONS[tableNumber];
-                if (!poly) return null;
-
-                const tableIdx = tableNumberToIndex(tableNumber);
-                const assignedTable =
-                  tableIdx !== null ? tables[tableIdx] ?? null : null;
+              {planTables.map(({ tableNumber, tableIdx, poly, table }) => {
                 const colors = getTableColors(
-                  tableNumber,
-                  isUsableTableNumber(tableNumber) ? assignedTable : null,
+                  table,
                   allEntries,
                   tables,
                   unfulfilledWishes
                 );
 
-                if (
-                  colors.fill === "transparent" &&
-                  colors.stroke === "transparent"
-                ) {
-                  return null;
-                }
-
-                const isDragging =
-                  tableIdx !== null && activeDragIdx === tableIdx;
+                const isDragging = activeDragIdx === tableIdx;
                 const isDropTarget =
-                  tableIdx !== null &&
-                  overDropIdx === tableIdx &&
-                  activeDragIdx !== tableIdx;
+                  overDropIdx === tableIdx && activeDragIdx !== tableIdx;
                 const isDimmed =
                   isDragActive &&
-                  tableIdx !== null &&
                   tableIdx !== activeDragIdx &&
                   tableIdx !== overDropIdx;
                 const isSwapSource =
-                  swapMode && tableIdx !== null && swapSourceIdx === tableIdx;
+                  swapMode && swapSourceIdx === tableIdx;
 
                 return (
                   <FloorplanTablePolygon
@@ -906,7 +820,7 @@ export function Floorplan({
             </svg>
 
             <div className="absolute inset-0 pointer-events-none">
-              {interactiveTables.map(({ tableNumber, tableIdx, poly }) => (
+              {planTables.map(({ tableNumber, tableIdx, poly }) => (
                 <div key={tableNumber} className="pointer-events-auto">
                   <FloorplanTableHitArea
                     tableIdx={tableIdx}
