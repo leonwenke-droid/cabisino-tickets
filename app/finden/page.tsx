@@ -94,7 +94,13 @@ export default function FindenPage() {
         />
       </div>
 
-      <main className="flex-1 w-full max-w-lg mx-auto px-4 py-6 relative z-10">
+      <main
+        className={`flex-1 w-full mx-auto py-6 relative z-10 ${
+          selected
+            ? "max-w-4xl max-sm:max-w-none max-sm:px-0 px-4"
+            : "max-w-lg px-4"
+        }`}
+      >
         <div className="text-center mb-6">
           <p className="text-gold/60 text-2xl mb-2">♠ ♦</p>
           <h1 className="font-serif text-3xl text-cream">Sitzplatz finden</h1>
@@ -188,8 +194,8 @@ export default function FindenPage() {
         )}
 
         {selected && (
-          <div className="space-y-4 animate-fade-in">
-            <div className="felt-card rounded-2xl p-5 border border-gold/25">
+          <div className="space-y-4 animate-fade-in max-sm:space-y-3">
+            <div className="felt-card rounded-2xl p-5 border border-gold/25 max-sm:mx-3 max-sm:p-4">
               <p className="text-cream-muted text-xs font-sans uppercase tracking-wide">
                 Dein Tisch
               </p>
@@ -201,9 +207,11 @@ export default function FindenPage() {
               </p>
             </div>
 
-            <PublicFloorplan highlightTableNumber={selected.tableNumber} />
+            <div className="w-full max-sm:px-0">
+              <PublicFloorplan highlightTableNumber={selected.tableNumber} />
+            </div>
 
-            <div className="felt-card rounded-2xl p-5 border border-gold/15">
+            <div className="felt-card rounded-2xl p-5 border border-gold/15 max-sm:mx-3 max-sm:p-4">
               <h3 className="font-serif text-lg text-cream mb-2">
                 Deine Gruppe am Tisch
               </h3>

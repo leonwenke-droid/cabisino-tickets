@@ -30,6 +30,12 @@ import {
   TABLE_POLYGONS,
   type TablePolygon,
 } from "@/lib/floorplan-table-polygons";
+import { GRAYED_OUT_TABLES } from "@/lib/floorplan-extras";
+import {
+  floorplanPointToPercent,
+  floorplanViewBoxAttr,
+} from "@/lib/floorplan-viewbox";
+import { FloorplanArchitecture } from "@/components/floorplan-architecture";
 import {
   TABLE_CAPACITY,
   ZOLLHAUS_TABLE_NUMBERS,
@@ -37,8 +43,6 @@ import {
   getTableCapacityForDisplay,
   isBufferTableIndex,
 } from "@/lib/zollhaus-tables";
-
-const VIEWBOX = { w: 1800, h: 1280 };
 
 const OCTAGON_CLIP =
   "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)";
@@ -109,21 +113,38 @@ function parseFloorplanTableId(id: unknown): number | null {
   return Number.isFinite(idx) && idx >= 0 ? idx : null;
 }
 
+const GRAYED_COLORS = {
+  fill: "#0d0d10",
+  stroke: "#2a2a30",
+  textFill: "#9ca3af",
+};
+
 function getTableColors(
   table: AssignedTable,
-  tableIdx: number
+  tableIdx: number,
+  tableNumber: number
 ): {
   fill: string;
   stroke: string;
   textFill: string;
   interactive: boolean;
+  grayedOut: boolean;
 } {
+  if (GRAYED_OUT_TABLES.has(tableNumber)) {
+    return {
+      ...GRAYED_COLORS,
+      interactive: false,
+      grayedOut: true,
+    };
+  }
+
   if (isBufferTableIndex(tableIdx)) {
     return {
       fill: COLORS.bufferFill,
       stroke: COLORS.bufferStroke,
       textFill: COLORS.bufferText,
       interactive: false,
+      grayedOut: false,
     };
   }
 
@@ -136,6 +157,7 @@ function getTableColors(
       stroke: COLORS.redStroke,
       textFill: "#ffffff",
       interactive: true,
+      grayedOut: false,
     };
   }
   if (isEmpty) {
@@ -144,6 +166,7 @@ function getTableColors(
       stroke: COLORS.emptyStroke,
       textFill: "#9ca3af",
       interactive: true,
+      grayedOut: false,
     };
   }
   return {
@@ -151,6 +174,7 @@ function getTableColors(
     stroke: COLORS.occupiedStroke,
     textFill: "#1a1a1a",
     interactive: true,
+    grayedOut: false,
   };
 }
 
@@ -172,6 +196,7 @@ function FloorplanTablePolygon({
   isDropTarget,
   isDimmed,
   isSwapSource,
+  isGrayedOut,
 }: {
   tableNumber: number;
   poly: TablePolygon;
@@ -182,12 +207,24 @@ function FloorplanTablePolygon({
   isDropTarget?: boolean;
   isDimmed?: boolean;
   isSwapSource?: boolean;
+  isGrayedOut?: boolean;
 }) {
-  const stroke = isDropTarget || isSwapSource ? COLORS.gold : colors.stroke;
-  const strokeWidth = isDropTarget || isSwapSource ? 4 : isDragging ? 3 : 2;
-  const opacity = isDimmed ? 0.6 : isDragging ? 0.35 : 1;
+  const stroke = isGrayedOut
+    ? colors.stroke
+    : isDropTarget || isSwapSource
+      ? COLORS.gold
+      : colors.stroke;
+  const strokeWidth = isGrayedOut
+    ? 2
+    : isDropTarget || isSwapSource
+      ? 4
+      : isDragging
+        ? 3
+        : 2;
+  const opacity = isGrayedOut ? 0.25 : isDimmed ? 0.6 : isDragging ? 0.35 : 1;
+  const labelOpacity = isGrayedOut ? 0.2 : opacity;
   const transform =
-    isDragging || isDropTarget
+    !isGrayedOut && (isDragging || isDropTarget)
       ? `translate(${poly.tx} ${poly.ty}) scale(${isDropTarget ? 1.08 : 1.1}) translate(${-poly.tx} ${-poly.ty})`
       : undefined;
   const badgeAnchor = getPolygonBadgeAnchor(poly);
@@ -204,11 +241,13 @@ function FloorplanTablePolygon({
         strokeWidth={strokeWidth}
         opacity={opacity}
         style={
-          isDragging
-            ? { filter: "drop-shadow(0 4px 12px rgba(201,162,39,0.55))" }
-            : isDropTarget
-              ? { filter: "drop-shadow(0 0 10px rgba(201,162,39,0.85))" }
-              : undefined
+          isGrayedOut
+            ? undefined
+            : isDragging
+              ? { filter: "drop-shadow(0 4px 12px rgba(201,162,39,0.55))" }
+              : isDropTarget
+                ? { filter: "drop-shadow(0 0 10px rgba(201,162,39,0.85))" }
+                : undefined
         }
       />
       <text
@@ -220,7 +259,7 @@ function FloorplanTablePolygon({
         textAnchor="middle"
         dominantBaseline="central"
         pointerEvents="none"
-        opacity={opacity}
+        opacity={labelOpacity}
         fontFamily="system-ui, -apple-system, sans-serif"
       >
         {tableNumber}
@@ -235,12 +274,12 @@ function FloorplanTablePolygon({
           textAnchor="middle"
           dominantBaseline="central"
           pointerEvents="none"
-          opacity={opacity}
+          opacity={labelOpacity}
           fontFamily="system-ui, -apple-system, sans-serif"
         >
           Puffer
         </text>
-      ) : (
+      ) : !isGrayedOut ? (
       <g opacity={opacity} pointerEvents="none">
         <rect
           x={badgeAnchor.x - 17}
@@ -265,7 +304,41 @@ function FloorplanTablePolygon({
           {occupancyLabel}
         </text>
       </g>
-      )}
+      ) : null}
+    </g>
+  );
+}
+
+function FloorplanVisualOnlyTable({
+  tableNumber,
+  poly,
+}: {
+  tableNumber: number;
+  poly: TablePolygon;
+}) {
+  return (
+    <g>
+      <polygon
+        points={poly.points}
+        fill={COLORS.emptyFill}
+        stroke={COLORS.emptyStroke}
+        strokeWidth={2}
+        opacity={0.5}
+      />
+      <text
+        x={poly.tx}
+        y={poly.ty}
+        fill="#9ca3af"
+        fontSize={15}
+        fontWeight={600}
+        textAnchor="middle"
+        dominantBaseline="central"
+        pointerEvents="none"
+        opacity={0.5}
+        fontFamily="system-ui, -apple-system, sans-serif"
+      >
+        {tableNumber}
+      </text>
     </g>
   );
 }
@@ -289,8 +362,8 @@ function TableHoverTooltip({
     <div
       className="absolute z-40 pointer-events-none"
       style={{
-        left: `${(poly.tx / VIEWBOX.w) * 100}%`,
-        top: `${(poly.ty / VIEWBOX.h) * 100}%`,
+        left: `${floorplanPointToPercent(poly.tx, poly.ty).left}%`,
+        top: `${floorplanPointToPercent(poly.tx, poly.ty).top}%`,
         transform: "translate(-50%, calc(-100% - 10px))",
       }}
     >
@@ -380,8 +453,8 @@ function FloorplanTableHitArea({
         isDragging ? "opacity-0" : ""
       }`}
       style={{
-        left: `${(poly.tx / VIEWBOX.w) * 100}%`,
-        top: `${(poly.ty / VIEWBOX.h) * 100}%`,
+        left: `${floorplanPointToPercent(poly.tx, poly.ty).left}%`,
+        top: `${floorplanPointToPercent(poly.tx, poly.ty).top}%`,
         width: "4.8%",
         minWidth: 48,
         aspectRatio: "1",
@@ -613,6 +686,19 @@ export function Floorplan({
     [tables]
   );
 
+  const visualOnlyTables = useMemo(
+    () =>
+      Object.keys(TABLE_POLYGONS)
+        .map(Number)
+        .filter((tableNumber) => !ZOLLHAUS_TABLE_NUMBERS.includes(tableNumber))
+        .flatMap((tableNumber) => {
+          const poly = TABLE_POLYGONS[tableNumber];
+          if (!poly) return [];
+          return [{ tableNumber, poly }];
+        }),
+    []
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -763,16 +849,18 @@ export function Floorplan({
         <div className="overflow-x-auto rounded-2xl border border-gold/25 touch-pan-x">
           <div className="relative min-w-[720px]">
             <svg
-              viewBox={`0 0 ${VIEWBOX.w} ${VIEWBOX.h}`}
+              viewBox={floorplanViewBoxAttr()}
               xmlns="http://www.w3.org/2000/svg"
               width="100%"
               className="block h-auto"
               role="img"
               aria-label="Tischplan"
             >
+              <FloorplanArchitecture />
               {planTables.map(({ tableNumber, tableIdx, poly, table }) => {
-                const colors = getTableColors(table, tableIdx);
+                const colors = getTableColors(table, tableIdx, tableNumber);
                 const isBuffer = isBufferTableIndex(tableIdx);
+                const isGrayedOut = colors.grayedOut;
 
                 const isDragging = activeDragIdx === tableIdx;
                 const isDropTarget =
@@ -796,13 +884,24 @@ export function Floorplan({
                     isDropTarget={isDropTarget}
                     isDimmed={isDimmed}
                     isSwapSource={isSwapSource}
+                    isGrayedOut={isGrayedOut}
                   />
                 );
               })}
+              {visualOnlyTables.map(({ tableNumber, poly }) => (
+                <FloorplanVisualOnlyTable
+                  key={tableNumber}
+                  tableNumber={tableNumber}
+                  poly={poly}
+                />
+              ))}
             </svg>
 
             <div className="absolute inset-0 pointer-events-none">
-              {planTables.map(({ tableNumber, tableIdx, poly }) => (
+              {planTables.map(({ tableNumber, tableIdx, poly }) => {
+                if (GRAYED_OUT_TABLES.has(tableNumber)) return null;
+
+                return (
                 <div key={tableNumber} className="pointer-events-auto">
                   <FloorplanTableHitArea
                     tableIdx={tableIdx}
@@ -818,9 +917,10 @@ export function Floorplan({
                     onHoverChange={setHoveredTableIdx}
                   />
                 </div>
-              ))}
+                );
+              })}
 
-              {hoveredTable && (
+              {hoveredTable && !GRAYED_OUT_TABLES.has(hoveredTable.tableNumber) && (
                 <TableHoverTooltip
                   tableNumber={hoveredTable.tableNumber}
                   table={hoveredTable.table}
