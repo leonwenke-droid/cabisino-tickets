@@ -1,4 +1,3 @@
-import { isAllowed } from "@/lib/allowed-names";
 import {
   BRAND_FOOTER_HTML,
   CARD_BG,
@@ -81,9 +80,6 @@ function collectPeople(data: Extract<PinnwandDataResponse, { ok: true }>): Perso
   const people: PersonRow[] = [];
 
   for (const e of data.entries) {
-    // Only list registrants from the Abijahrgang (whitelist).
-    if (!isAllowed(e.vorname, e.nachname)) continue;
-
     const tableNumber = getTableNumberFromAssignment(data.assignment, e.id);
     if (!tableNumber) continue;
 
@@ -212,7 +208,15 @@ function createQrCard(qrDataUrl: string): HTMLDivElement {
   const qrImg = document.createElement("img");
   qrImg.src = qrDataUrl;
   qrImg.alt = "QR-Code";
-  qrImg.style.cssText = `width:${Math.round(widthPx * 0.55)}px;height:auto;image-rendering:crisp-edges;`;
+  qrImg.style.cssText = [
+    `width:${Math.round(widthPx * 0.55)}px`,
+    "height:auto",
+    "image-rendering:crisp-edges",
+    "background:rgba(255,255,255,0.96)",
+    `padding:${Math.round(widthPx * 0.02)}px`,
+    `border-radius:${Math.round(widthPx * 0.02)}px`,
+    `box-shadow:0 0 0 2px rgba(201,162,39,0.25)`,
+  ].join(";");
 
   const urlText = document.createElement("p");
   urlText.textContent = PINNWAND_URL;
@@ -308,6 +312,21 @@ function createNameListCard(rows: PersonRow[], rangeLabel: string): HTMLDivEleme
 async function renderCardJpeg(el: HTMLDivElement, container: HTMLDivElement): Promise<string> {
   container.appendChild(el);
   try {
+    // Ensure embedded images (QR) are decoded before capture.
+    const imgs = Array.from(el.querySelectorAll("img"));
+    await Promise.all(
+      imgs.map((img) => {
+        const anyImg = img as HTMLImageElement;
+        if (typeof anyImg.decode === "function") {
+          return anyImg.decode().catch(() => {});
+        }
+        return new Promise<void>((resolve) => {
+          if (anyImg.complete) return resolve();
+          anyImg.onload = () => resolve();
+          anyImg.onerror = () => resolve();
+        });
+      })
+    );
     return await captureNodeJpeg(el, PINNWAND_W_PX, PINNWAND_H_PX);
   } finally {
     container.removeChild(el);
@@ -343,7 +362,7 @@ export async function downloadPinnwandCardsZip(): Promise<void> {
     margin: 2,
     color: {
       dark: "#C9A227",
-      light: "#00000000",
+      light: "#ffffff",
     },
   });
 
