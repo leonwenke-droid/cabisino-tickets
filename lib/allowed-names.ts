@@ -75,6 +75,8 @@ export const ALLOWED_NAMES: string[] = [
   "Tomke Eden",
   "Viktor Scholz",
   "Wiebke Straat",
+  "Frank Williegmann",
+  "Frank Willigmann",
   "Zino Ley",
   "Zoe Kunanz",
 ];

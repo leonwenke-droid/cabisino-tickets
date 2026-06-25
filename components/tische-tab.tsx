@@ -43,6 +43,7 @@ import {
 import { downloadSeatingPlanPdf } from "@/lib/export-seating-pdf";
 import { Floorplan } from "@/components/floorplan";
 import { ManualAssignView } from "@/components/manual-assign-view";
+import { downloadPinnwandCardsZip } from "@/lib/export-pinnwand-cards-zip";
 import {
   ASSIGNABLE_TABLE_COUNT,
   BUFFER_TABLE_COUNT,
@@ -630,6 +631,7 @@ export function TischeTab({
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [publishingPlan, setPublishingPlan] = useState(false);
   const [showQrHelper, setShowQrHelper] = useState(false);
+  const [exportingPinnwandCards, setExportingPinnwandCards] = useState(false);
   const [exportingPlaceCards, setExportingPlaceCards] = useState(false);
   const [exportingPlaceCardsZip, setExportingPlaceCardsZip] = useState(false);
   const [exportingTentCards, setExportingTentCards] = useState(false);
@@ -862,15 +864,55 @@ export function TischeTab({
     }
   }, [displayResult.tables]);
 
+  const handlePinnwandCardsExport = useCallback(async () => {
+    setExportingPinnwandCards(true);
+    try {
+      await downloadPinnwandCardsZip();
+      setExportMsg("Pinnwand-Karten als ZIP heruntergeladen!");
+      setTimeout(() => setExportMsg(null), 2500);
+    } catch (e) {
+      const msg =
+        e instanceof Error && e.message
+          ? e.message
+          : "Pinnwand-Karten-Export fehlgeschlagen.";
+      setExportMsg(msg);
+      setTimeout(() => setExportMsg(null), 3500);
+    } finally {
+      setExportingPinnwandCards(false);
+    }
+  }, []);
+
   const handlePublishPlan = useCallback(async () => {
     const tables = currentTables ?? baseResult.tables;
     const assignment: Record<string, number> = {};
+
+    // Special-case: ensure Frank Williegmann sits with Jannik Peters when publishing.
+    let jannikTableNumber: number | null = null;
+    let frankEntryId: string | null = null;
+    for (let tableIdx = 0; tableIdx < tables.length; tableIdx++) {
+      const tableNumber = ZOLLHAUS_TABLE_NUMBERS[tableIdx] ?? null;
+      if (!tableNumber) continue;
+      for (const entry of tables[tableIdx]?.entries ?? []) {
+        const full = `${entry.vorname} ${entry.nachname}`.trim().toLowerCase();
+        if (full === "jannik peters") {
+          jannikTableNumber = tableNumber;
+        }
+        if (full === "frank williegmann" || full === "frank willigmann") {
+          frankEntryId = entry.id;
+        }
+      }
+    }
+
     for (let tableIdx = 0; tableIdx < tables.length; tableIdx++) {
       const tableNumber = ZOLLHAUS_TABLE_NUMBERS[tableIdx] ?? null;
       if (!tableNumber) continue;
       for (const entry of tables[tableIdx]?.entries ?? []) {
         assignment[entry.id] = tableNumber;
       }
+    }
+
+    if (jannikTableNumber && frankEntryId) {
+      assignment[frankEntryId] = jannikTableNumber;
     }
 
     setPublishingPlan(true);
@@ -960,6 +1002,7 @@ export function TischeTab({
   }, [displayResult.tables]);
 
   const isExportingCards =
+    exportingPinnwandCards ||
     exportingPlaceCards ||
     exportingPlaceCardsZip ||
     exportingTentCards ||
@@ -1252,6 +1295,15 @@ export function TischeTab({
             className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all"
           >
             Tischplan exportieren
+          </button>
+          <button
+            type="button"
+            onClick={handlePinnwandCardsExport}
+            disabled={isExportingCards}
+            className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
+            title="Erzeugt QR-Karte + alphabetische Namenslisten (20×30cm) als ZIP."
+          >
+            {exportingPinnwandCards ? "Pinnwand-Karten…" : "Pinnwand-Karten generieren"}
           </button>
           <button
             type="button"
