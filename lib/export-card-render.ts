@@ -12,10 +12,9 @@ export const EXPORT_HALF_H_PX = EXPORT_H_PX / 2;
 export const LEGACY_EXPORT_W_PX = 1181;
 
 export const CARD_GOLD = "#C9A227";
-export const CARD_CREAM = "#f0ead6";
 export const CARD_CREAM_MUTED = "#c8bfa8";
-/** High-contrast name text for legibility on dark backgrounds. */
-export const CARD_NAME_BRIGHT = "#faf6e8";
+export const CARD_NAME_MAIN = "#faf6e8";
+export const CARD_NAME_GUEST = "#f5efdd";
 export const CARD_BG = "#0a0a0f";
 export const BRAND_FOOTER_HTML = `Cabisino 2026 <span style="opacity:0.7">♠</span>`;
 
@@ -32,54 +31,50 @@ export type CardNameTypography = {
   nameLineGap: number;
 };
 
+/**
+ * Absolute px sizes for the 2362px-wide 600 DPI render node.
+ * Do not scale via legacy 300 DPI helpers — names must be large on canvas.
+ */
 export function computeCardNameTypography(
   lineCount: number,
-  widthPx: number,
   density: "full" | "half"
 ): CardNameTypography {
-  const baseMain =
-    density === "full"
-      ? lineCount <= 2
-        ? 36
-        : lineCount <= 4
-          ? 30
-          : lineCount <= 6
-            ? 26
-            : 22
-      : lineCount <= 2
-        ? 22
-        : lineCount <= 4
-          ? 18
-          : lineCount <= 6
-            ? 15
-            : 13;
+  const crowdScale =
+    lineCount <= 2 ? 1 : lineCount <= 4 ? 0.9 : lineCount <= 6 ? 0.82 : 0.74;
 
-  const mainMultiplier = density === "full" ? 1.3 * 1.12 : 1.25 * 1.12;
-  const guestBase = density === "full" ? baseMain - 6 : baseMain - 4;
-  const guestMultiplier = density === "full" ? 1.2 * 1.45 : 1.15 * 1.45;
+  const baseMain = density === "full" ? 95 : 88;
+  const baseGuest = density === "full" ? 78 : 72;
 
-  const mainSize = scalePx(Math.round(baseMain * mainMultiplier), widthPx);
-  const guestSize = scalePx(Math.round(guestBase * guestMultiplier), widthPx);
-  const nameLineGap = Math.round(mainSize * 0.3);
+  const mainSize = Math.round(baseMain * crowdScale);
+  const guestSize = Math.round(baseGuest * crowdScale);
+  const nameLineGap = Math.round(guestSize * 0.5);
 
   return { mainSize, guestSize, nameLineGap };
 }
 
-export function namesPanelStyle(widthPx: number): string {
+export function mainNameStyle(mainSize: number): string {
   return [
-    `background:rgba(255,255,255,0.05)`,
-    `border-radius:${scalePx(12, widthPx)}px`,
-    `padding:${scalePx(16, widthPx)}px ${scalePx(20, widthPx)}px`,
-    `box-sizing:border-box`,
+    "margin:0",
+    `font-size:${mainSize}px`,
+    "font-weight:700",
+    `color:${CARD_NAME_MAIN}`,
+    "line-height:1.2",
+    "word-break:break-word",
+    SHARP_TEXT_STYLE,
   ].join(";");
 }
 
-export function mainNameStyle(mainSize: number): string {
-  return `margin:0;font-size:${mainSize}px;font-weight:700;color:${CARD_NAME_BRIGHT};line-height:1.18;word-break:break-word;${SHARP_TEXT_STYLE}`;
-}
-
 export function guestNameStyle(guestSize: number): string {
-  return `margin:0;font-size:${guestSize}px;font-weight:500;color:${CARD_NAME_BRIGHT};opacity:1;line-height:1.22;word-break:break-word;${SHARP_TEXT_STYLE}`;
+  return [
+    "margin:0",
+    `font-size:${guestSize}px`,
+    "font-weight:500",
+    `color:${CARD_NAME_GUEST}`,
+    "opacity:1",
+    "line-height:1.5",
+    "word-break:break-word",
+    SHARP_TEXT_STYLE,
+  ].join(";");
 }
 
 export function appendFamilyNames(
@@ -138,10 +133,9 @@ export function createCardRenderContainer(): HTMLDivElement {
 export async function ensureExportFontsReady(): Promise<void> {
   await document.fonts.ready;
   await Promise.all([
-    document.fonts.load('400 32px "DM Sans"'),
-    document.fonts.load('500 32px "DM Sans"'),
-    document.fonts.load('700 32px "Playfair Display"'),
-    document.fonts.load('700 96px "Playfair Display"'),
+    document.fonts.load('500 78px "DM Sans"'),
+    document.fonts.load('700 95px "Playfair Display"'),
+    document.fonts.load('700 180px "Playfair Display"'),
   ]);
 }
 

@@ -18,7 +18,6 @@ import {
   createCardRenderContainer,
   createOrnamentalDivider,
   ensureExportFontsReady,
-  namesPanelStyle,
   scalePx,
 } from "@/lib/export-card-render";
 
@@ -74,7 +73,6 @@ function createPlaceCardElement(
   const lineCount = 1 + card.guestNames.length;
   const { mainSize, guestSize, nameLineGap } = computeCardNameTypography(
     lineCount,
-    widthPx,
     "full"
   );
   const tableSize = Math.round(
@@ -160,7 +158,6 @@ function createPlaceCardElement(
     `flex-direction:column`,
     `align-items:center`,
     `gap:${nameLineGap}px`,
-    namesPanelStyle(widthPx),
     SHARP_TEXT_STYLE,
   ].join(";");
 

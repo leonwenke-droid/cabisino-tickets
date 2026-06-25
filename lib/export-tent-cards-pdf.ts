@@ -21,7 +21,6 @@ import {
   createCardRenderContainer,
   createOrnamentalDivider,
   ensureExportFontsReady,
-  namesPanelStyle,
   scalePx,
 } from "@/lib/export-card-render";
 
@@ -133,7 +132,6 @@ function createTentCardHalfContent(
   const lineCount = family ? 1 + family.guestNames.length : 0;
   const { mainSize, guestSize, nameLineGap } = computeCardNameTypography(
     Math.max(lineCount, 1),
-    widthPx,
     "half"
   );
   const tableSize = brandingOnly
@@ -230,7 +228,6 @@ function createTentCardHalfContent(
     `width:100%`,
     `max-width:${Math.round(widthPx * 0.88)}px`,
     `gap:${nameLineGap}px`,
-    namesPanelStyle(widthPx),
     SHARP_TEXT_STYLE,
   ].join(";");
 
