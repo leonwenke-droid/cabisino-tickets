@@ -15,12 +15,14 @@ import { CasinoTicket, downloadCasinoTicket } from "@/components/casino-ticket";
 const PRICE_PER_PERSON = 64;
 const SUITS = ["♠", "♥", "♦", "♣"];
 
+const REGISTRATION_CLOSED = true;
+
 // Verkaufstermine — mark past ones as done
 const VERKAUFSTERMINE = [
   { date: "01.06.", done: true },
   { date: "11.06.", done: true },
-  { date: "15.06.", done: false },
-  { date: "17.06.", done: false },
+  { date: "15.06.", done: true },
+  { date: "17.06.", done: true },
 ];
 
 type ViewState = "name" | "guests" | "duplicate" | "confirmation";
@@ -61,6 +63,10 @@ export default function RegistrationPage() {
 
   const submitRegistration = useCallback(
     async (guestList: GuestName[]) => {
+      if (REGISTRATION_CLOSED) {
+        setSubmitError("Die Anmeldung ist geschlossen.");
+        return;
+      }
       const { names: filteredGuests, error: guestError } = resolveGuestNames(guestList);
       if (guestError) {
         setSubmitError(guestError);
@@ -98,6 +104,11 @@ export default function RegistrationPage() {
     async (e: React.FormEvent) => {
       e.preventDefault();
       setNameError(null);
+
+      if (REGISTRATION_CLOSED) {
+        setNameError("Die Anmeldung ist geschlossen.");
+        return;
+      }
 
       const vn = vorname.trim();
       const nn = nachname.trim();
@@ -187,9 +198,74 @@ export default function RegistrationPage() {
       <span className="suit-watermark text-gold" style={{ top: "50%", right: "-2%" }}>♦</span>
 
       <main className="flex-1 flex flex-col items-center px-4 py-10 relative z-10">
+        {REGISTRATION_CLOSED && (
+          <div className="w-full max-w-md animate-fade-up">
+            {/* Hero */}
+            <div className="text-center mb-8 select-none">
+              <div className="flex justify-center gap-4 text-gold/60 text-xl mb-4">
+                {SUITS.map((s) => <span key={s}>{s}</span>)}
+              </div>
+              <h1
+                className="font-serif font-bold leading-none mb-2"
+                style={{
+                  fontSize: "clamp(3rem, 14vw, 5.5rem)",
+                  background:
+                    "linear-gradient(135deg, #b8891e 0%, #C9A227 35%, #e8c84a 55%, #C9A227 80%, #b8891e 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                  letterSpacing: "-0.01em",
+                }}
+              >
+                Cabisino
+              </h1>
+              <p className="text-cream-muted font-sans text-sm tracking-wide">
+                13 Jahre Pokern für den Jackpot
+              </p>
+              <div
+                className="mt-3 mx-auto w-24 h-px"
+                style={{
+                  background: "linear-gradient(90deg, transparent, #C9A227, transparent)",
+                }}
+              />
+            </div>
+
+            {/* Verkaufstermine */}
+            <div className="mb-6">
+              <p className="text-cream-muted text-xs font-sans text-center tracking-widest uppercase mb-3">
+                Ticketverkauf
+              </p>
+              <div className="flex justify-center gap-2 flex-wrap">
+                {VERKAUFSTERMINE.map(({ date, done }) => (
+                  <span
+                    key={date}
+                    className={`px-3 py-1.5 rounded-full text-sm font-sans border transition-all ${
+                      done
+                        ? "border-gold/10 text-cream-muted/30 line-through bg-black/10"
+                        : "border-gold/30 text-gold bg-gold/10"
+                    }`}
+                  >
+                    {date}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="felt-card rounded-2xl p-6 text-center border border-gold/20">
+              <p className="text-gold/70 text-2xl mb-3">♣</p>
+              <h2 className="font-serif text-2xl text-cream mb-2">
+                Anmeldung geschlossen
+              </h2>
+              <p className="text-cream-muted text-sm font-sans leading-relaxed">
+                Der Vorverkauf ist vorbei. Wenn du noch Fragen hast, melde dich bitte
+                bei Leon.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── NAME STEP ── */}
-        {view === "name" && (
+        {!REGISTRATION_CLOSED && view === "name" && (
           <div className="w-full max-w-md animate-fade-up">
             {/* Hero */}
             <div className="text-center mb-8 select-none">
@@ -294,7 +370,7 @@ export default function RegistrationPage() {
         )}
 
         {/* ── GUESTS STEP ── */}
-        {view === "guests" && (
+        {!REGISTRATION_CLOSED && view === "guests" && (
           <div className="w-full max-w-md animate-fade-up">
             <div className="text-center mb-7 select-none">
               <p className="text-gold/60 text-lg mb-1">♠ ♣</p>
@@ -449,7 +525,7 @@ export default function RegistrationPage() {
         )}
 
         {/* ── DUPLICATE VIEW ── */}
-        {view === "duplicate" && confirmedEntry && (
+        {!REGISTRATION_CLOSED && view === "duplicate" && confirmedEntry && (
           <div className="w-full max-w-sm animate-fade-up">
             <div className="text-center mb-6">
               <span className="text-3xl">⚠</span>
@@ -464,7 +540,7 @@ export default function RegistrationPage() {
         )}
 
         {/* ── CONFIRMATION VIEW ── */}
-        {view === "confirmation" && confirmedEntry && (
+        {!REGISTRATION_CLOSED && view === "confirmation" && confirmedEntry && (
           <div className="w-full max-w-sm animate-deal-in">
             <div className="text-center mb-6">
               <div className="flex justify-center gap-3 text-gold text-lg mb-3">

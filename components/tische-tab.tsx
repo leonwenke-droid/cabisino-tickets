@@ -76,6 +76,10 @@ type PersistedTischplan = {
   tables: PersistedTable[];
 };
 
+type SeatingPlanApiResponse =
+  | { assignment: Record<string, unknown> | null; published_at: string | null }
+  | { error: string };
+
 function serializeTischplan(tables: AssignedTable[]): PersistedTischplan {
   return {
     tables: tables.map((t) => ({
@@ -84,6 +88,40 @@ function serializeTischplan(tables: AssignedTable[]): PersistedTischplan {
       groupSplit: t.groupSplit,
     })),
   };
+}
+
+function applyPublishedAssignment(
+  assignment: Record<string, unknown>,
+  entries: Entry[]
+): AssignedTable[] {
+  const byId = new Map(entries.map((e) => [e.id, e]));
+  const tables = createEmptyAssignedTables();
+
+  const tableNumberToIdx = new Map<number, number>();
+  for (let i = 0; i < ZOLLHAUS_TABLE_NUMBERS.length; i++) {
+    tableNumberToIdx.set(ZOLLHAUS_TABLE_NUMBERS[i]!, i);
+  }
+
+  for (const [entryId, rawTable] of Object.entries(assignment)) {
+    const entry = byId.get(entryId);
+    if (!entry) continue;
+
+    const tableNumber =
+      typeof rawTable === "number"
+        ? rawTable
+        : typeof rawTable === "string"
+          ? Number.parseInt(rawTable, 10)
+          : NaN;
+    if (!Number.isFinite(tableNumber)) continue;
+
+    const idx = tableNumberToIdx.get(tableNumber);
+    if (idx === undefined) continue;
+
+    tables[idx]!.entries.push(entry);
+    tables[idx]!.seatsUsed += entry.total_persons;
+  }
+
+  return tables;
 }
 
 function deserializeTischplan(data: PersistedTischplan, entries: Entry[]): AssignedTable[] {
@@ -607,6 +645,7 @@ export function TischeTab({
   const [overDropId, setOverDropId] = useState<string | null>(null);
   const [planInitialized, setPlanInitialized] = useState(false);
   const [planLoadedFromStorage, setPlanLoadedFromStorage] = useState(false);
+  const [planLoadedFromDb, setPlanLoadedFromDb] = useState(false);
   const [skipBaseResultSync, setSkipBaseResultSync] = useState(false);
   const [viewMode, setViewMode] = useState<TischeViewMode>("grid");
 
@@ -629,20 +668,50 @@ export function TischeTab({
   useEffect(() => {
     if (planInitialized || entries.length === 0) return;
 
-    const persisted = loadPersistedTischplan(entries);
-    if (persisted) {
-      const { tables: reconciled } = reconcileTablesWithEntries(persisted, entries);
-      setCurrentTables(cloneTables(reconciled));
-      setSkipBaseResultSync(true);
-      setPlanLoadedFromStorage(true);
-      persistTischplan(reconciled);
-    } else {
-      const result = assignSeats(entries);
-      setCurrentTables(cloneTables(result.tables));
-      setSkipBaseResultSync(true);
-      setBaseAssignmentSignatures(buildAssignmentSignatures(result.tables));
-    }
-    setPlanInitialized(true);
+    const adminToken = sessionStorage.getItem("admin_auth_token") ?? "";
+
+    const load = async () => {
+      // 1) Prefer published plan from Supabase so the plan is device-independent.
+      try {
+        const res = await fetch("/api/get-seating-plan", {
+          method: "GET",
+          headers: { "x-admin-token": adminToken },
+        });
+        const json = (await res.json()) as SeatingPlanApiResponse;
+        if (res.ok && "assignment" in json && json.assignment) {
+          const tablesFromDb = applyPublishedAssignment(json.assignment, entries);
+          const { tables: reconciled } = reconcileTablesWithEntries(tablesFromDb, entries);
+          clearPersistedTischplan();
+          persistTischplan(reconciled);
+          setCurrentTables(cloneTables(reconciled));
+          setSkipBaseResultSync(true);
+          setPlanLoadedFromDb(true);
+          setPlanLoadedFromStorage(false);
+          setPlanInitialized(true);
+          return;
+        }
+      } catch {
+        // Ignore and fallback below.
+      }
+
+      // 2) Fallback: local storage (legacy behavior)
+      const persisted = loadPersistedTischplan(entries);
+      if (persisted) {
+        const { tables: reconciled } = reconcileTablesWithEntries(persisted, entries);
+        setCurrentTables(cloneTables(reconciled));
+        setSkipBaseResultSync(true);
+        setPlanLoadedFromStorage(true);
+        persistTischplan(reconciled);
+      } else {
+        const result = assignSeats(entries);
+        setCurrentTables(cloneTables(result.tables));
+        setSkipBaseResultSync(true);
+        setBaseAssignmentSignatures(buildAssignmentSignatures(result.tables));
+      }
+      setPlanInitialized(true);
+    };
+
+    void load();
   }, [entries, planInitialized]);
 
   useEffect(() => {
@@ -654,6 +723,7 @@ export function TischeTab({
     persistTischplan(tables);
     setSkipBaseResultSync(true);
     setPlanLoadedFromStorage(false);
+    setPlanLoadedFromDb(false);
   }, [baseResult, skipBaseResultSync, planInitialized]);
 
   useEffect(() => {
@@ -1082,6 +1152,30 @@ export function TischeTab({
         <div className="rounded-2xl border border-gold/30 bg-gold/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
           <p className="text-cream text-xs font-sans flex-1">
             Gespeicherter Tischplan geladen.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleRecalculate}
+              className="py-2 px-4 rounded-xl border border-gold/20 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
+            >
+              Neu berechnen (überschreibt Zuordnungen)
+            </button>
+            <button
+              type="button"
+              onClick={handleClearPlan}
+              className="py-2 px-4 rounded-xl border border-gray-500/30 text-gray-400 text-xs font-sans hover:text-cream hover:border-gray-400/50 transition-all"
+            >
+              Plan löschen
+            </button>
+          </div>
+        </div>
+      )}
+
+      {planLoadedFromDb && (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-3">
+          <p className="text-cream text-xs font-sans flex-1">
+            Veröffentlichten Sitzplan geladen (geräteübergreifend).
           </p>
           <div className="flex flex-wrap gap-2">
             <button
