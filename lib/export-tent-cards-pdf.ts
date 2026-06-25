@@ -5,7 +5,6 @@ import type { PlaceCardData } from "@/lib/export-place-cards-pdf";
 import {
   BRAND_FOOTER_HTML,
   CARD_BG,
-  CARD_CREAM,
   CARD_CREAM_MUTED,
   CARD_GOLD,
   CARD_H_MM,
@@ -14,12 +13,15 @@ import {
   EXPORT_HALF_H_PX,
   EXPORT_W_PX,
   SHARP_TEXT_STYLE,
+  appendFamilyNames,
   captureNodeJpeg,
   captureNodePng,
+  computeCardNameTypography,
   createCardPdfDocument,
   createCardRenderContainer,
   createOrnamentalDivider,
   ensureExportFontsReady,
+  namesPanelStyle,
   scalePx,
 } from "@/lib/export-card-render";
 
@@ -129,10 +131,11 @@ function createTentCardHalfContent(
   foldEdge: "top" | "bottom"
 ): HTMLDivElement {
   const lineCount = family ? 1 + family.guestNames.length : 0;
-  const baseMain =
-    lineCount <= 2 ? 22 : lineCount <= 4 ? 18 : lineCount <= 6 ? 15 : 13;
-  const mainSize = scalePx(Math.round(baseMain * 1.25), widthPx);
-  const guestSize = scalePx(Math.round((baseMain - 4) * 1.15), widthPx);
+  const { mainSize, guestSize, nameLineGap } = computeCardNameTypography(
+    Math.max(lineCount, 1),
+    widthPx,
+    "half"
+  );
   const tableSize = brandingOnly
     ? Math.round(widthPx * 0.08)
     : Math.round(widthPx * (lineCount <= 4 ? 0.068 : 0.058));
@@ -147,7 +150,6 @@ function createTentCardHalfContent(
   const foldSafe = Math.round(halfHeightPx * 0.07);
   const suitInset = Math.round(widthPx * 0.06);
   const footerOffset = Math.round(halfHeightPx * 0.1);
-  const nameLineGap = Math.round(mainSize * 0.16);
 
   const foldPadTop = foldEdge === "top" ? padTop + foldSafe : padTop;
   const foldPadBottom = foldEdge === "bottom" ? padBottom + foldSafe : padBottom;
@@ -226,26 +228,23 @@ function createTentCardHalfContent(
     `justify-content:center`,
     `text-align:center`,
     `width:100%`,
+    `max-width:${Math.round(widthPx * 0.88)}px`,
     `gap:${nameLineGap}px`,
-    `padding:${Math.round(nameLineGap * 0.5)}px 0`,
+    namesPanelStyle(widthPx),
     SHARP_TEXT_STYLE,
   ].join(";");
 
   if (!brandingOnly && family) {
-    const main = document.createElement("p");
-    main.textContent = `${family.vorname} ${family.nachname}`;
-    main.style.cssText = `margin:0;font-size:${mainSize}px;font-weight:700;color:${CARD_CREAM};line-height:1.15;word-break:break-word;${SHARP_TEXT_STYLE}`;
-    names.append(main);
-
-    for (const guest of family.guestNames) {
-      const guestEl = document.createElement("p");
-      guestEl.textContent = guest;
-      guestEl.style.cssText = `margin:0;font-size:${guestSize}px;font-weight:400;color:${CARD_CREAM};opacity:0.92;line-height:1.12;word-break:break-word;${SHARP_TEXT_STYLE}`;
-      names.append(guestEl);
-    }
+    appendFamilyNames(
+      names,
+      family.vorname,
+      family.nachname,
+      family.guestNames,
+      { mainSize, guestSize, nameLineGap }
+    );
 
     const bottomDivider = createOrnamentalDivider(62, "♠", ornamentSize);
-    bottomDivider.style.marginTop = `${Math.round(nameLineGap * 0.8)}px`;
+    bottomDivider.style.marginTop = `${Math.round(nameLineGap * 0.9)}px`;
     names.append(bottomDivider);
   }
 

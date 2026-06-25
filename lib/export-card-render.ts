@@ -14,6 +14,8 @@ export const LEGACY_EXPORT_W_PX = 1181;
 export const CARD_GOLD = "#C9A227";
 export const CARD_CREAM = "#f0ead6";
 export const CARD_CREAM_MUTED = "#c8bfa8";
+/** High-contrast name text for legibility on dark backgrounds. */
+export const CARD_NAME_BRIGHT = "#faf6e8";
 export const CARD_BG = "#0a0a0f";
 export const BRAND_FOOTER_HTML = `Cabisino 2026 <span style="opacity:0.7">♠</span>`;
 
@@ -22,6 +24,82 @@ export const SHARP_TEXT_STYLE =
 
 export function scalePx(value: number, widthPx: number = EXPORT_W_PX): number {
   return Math.round(value * (widthPx / LEGACY_EXPORT_W_PX));
+}
+
+export type CardNameTypography = {
+  mainSize: number;
+  guestSize: number;
+  nameLineGap: number;
+};
+
+export function computeCardNameTypography(
+  lineCount: number,
+  widthPx: number,
+  density: "full" | "half"
+): CardNameTypography {
+  const baseMain =
+    density === "full"
+      ? lineCount <= 2
+        ? 36
+        : lineCount <= 4
+          ? 30
+          : lineCount <= 6
+            ? 26
+            : 22
+      : lineCount <= 2
+        ? 22
+        : lineCount <= 4
+          ? 18
+          : lineCount <= 6
+            ? 15
+            : 13;
+
+  const mainMultiplier = density === "full" ? 1.3 * 1.12 : 1.25 * 1.12;
+  const guestBase = density === "full" ? baseMain - 6 : baseMain - 4;
+  const guestMultiplier = density === "full" ? 1.2 * 1.45 : 1.15 * 1.45;
+
+  const mainSize = scalePx(Math.round(baseMain * mainMultiplier), widthPx);
+  const guestSize = scalePx(Math.round(guestBase * guestMultiplier), widthPx);
+  const nameLineGap = Math.round(mainSize * 0.3);
+
+  return { mainSize, guestSize, nameLineGap };
+}
+
+export function namesPanelStyle(widthPx: number): string {
+  return [
+    `background:rgba(255,255,255,0.05)`,
+    `border-radius:${scalePx(12, widthPx)}px`,
+    `padding:${scalePx(16, widthPx)}px ${scalePx(20, widthPx)}px`,
+    `box-sizing:border-box`,
+  ].join(";");
+}
+
+export function mainNameStyle(mainSize: number): string {
+  return `margin:0;font-size:${mainSize}px;font-weight:700;color:${CARD_NAME_BRIGHT};line-height:1.18;word-break:break-word;${SHARP_TEXT_STYLE}`;
+}
+
+export function guestNameStyle(guestSize: number): string {
+  return `margin:0;font-size:${guestSize}px;font-weight:500;color:${CARD_NAME_BRIGHT};opacity:1;line-height:1.22;word-break:break-word;${SHARP_TEXT_STYLE}`;
+}
+
+export function appendFamilyNames(
+  container: HTMLDivElement,
+  vorname: string,
+  nachname: string,
+  guestNames: string[],
+  typography: CardNameTypography
+): void {
+  const main = document.createElement("p");
+  main.textContent = `${vorname} ${nachname}`;
+  main.style.cssText = mainNameStyle(typography.mainSize);
+  container.append(main);
+
+  for (const guest of guestNames) {
+    const guestEl = document.createElement("p");
+    guestEl.textContent = guest;
+    guestEl.style.cssText = guestNameStyle(typography.guestSize);
+    container.append(guestEl);
+  }
 }
 
 export function createOrnamentalDivider(

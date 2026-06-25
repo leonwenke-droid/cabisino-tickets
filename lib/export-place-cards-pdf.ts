@@ -3,7 +3,6 @@ import { getZollhausTableNumber } from "@/lib/zollhaus-tables";
 import {
   BRAND_FOOTER_HTML,
   CARD_BG,
-  CARD_CREAM,
   CARD_CREAM_MUTED,
   CARD_GOLD,
   CARD_H_MM,
@@ -11,12 +10,15 @@ import {
   EXPORT_H_PX,
   EXPORT_W_PX,
   SHARP_TEXT_STYLE,
+  appendFamilyNames,
   captureNodeJpeg,
   captureNodePng,
+  computeCardNameTypography,
   createCardPdfDocument,
   createCardRenderContainer,
   createOrnamentalDivider,
   ensureExportFontsReady,
+  namesPanelStyle,
   scalePx,
 } from "@/lib/export-card-render";
 
@@ -70,10 +72,11 @@ function createPlaceCardElement(
   heightPx: number
 ): HTMLDivElement {
   const lineCount = 1 + card.guestNames.length;
-  const baseMain =
-    lineCount <= 2 ? 36 : lineCount <= 4 ? 30 : lineCount <= 6 ? 26 : 22;
-  const mainSize = scalePx(Math.round(baseMain * 1.3), widthPx);
-  const guestSize = scalePx(Math.round((baseMain - 6) * 1.2), widthPx);
+  const { mainSize, guestSize, nameLineGap } = computeCardNameTypography(
+    lineCount,
+    widthPx,
+    "full"
+  );
   const tableSize = Math.round(
     widthPx * (lineCount <= 4 ? 0.076 : 0.064)
   );
@@ -87,7 +90,6 @@ function createPlaceCardElement(
   const padBottom = Math.round(heightPx * 0.06);
   const suitInset = Math.round(widthPx * 0.06);
   const footerOffset = Math.round(heightPx * 0.1);
-  const nameLineGap = Math.round(mainSize * 0.18);
 
   const el = document.createElement("div");
   el.style.cssText = [
@@ -158,24 +160,20 @@ function createPlaceCardElement(
     `flex-direction:column`,
     `align-items:center`,
     `gap:${nameLineGap}px`,
+    namesPanelStyle(widthPx),
     SHARP_TEXT_STYLE,
   ].join(";");
 
-  const main = document.createElement("p");
-  main.textContent = `${card.vorname} ${card.nachname}`;
-  main.style.cssText = `margin:0;font-size:${mainSize}px;font-weight:700;color:${CARD_CREAM};line-height:1.15;word-break:break-word;${SHARP_TEXT_STYLE}`;
-
-  names.append(main);
-
-  for (const guest of card.guestNames) {
-    const guestEl = document.createElement("p");
-    guestEl.textContent = guest;
-    guestEl.style.cssText = `margin:0;font-size:${guestSize}px;font-weight:400;color:${CARD_CREAM};opacity:0.92;line-height:1.12;word-break:break-word;${SHARP_TEXT_STYLE}`;
-    names.append(guestEl);
-  }
+  appendFamilyNames(
+    names,
+    card.vorname,
+    card.nachname,
+    card.guestNames,
+    { mainSize, guestSize, nameLineGap }
+  );
 
   const bottomDivider = createOrnamentalDivider(62, "♠", ornamentSize);
-  bottomDivider.style.marginTop = `${Math.round(nameLineGap * 1.4)}px`;
+  bottomDivider.style.marginTop = `${Math.round(nameLineGap * 1.2)}px`;
   names.append(bottomDivider);
 
   const footer = document.createElement("div");
