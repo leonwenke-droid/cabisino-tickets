@@ -54,6 +54,10 @@ import {
   isBufferTableIndex,
 } from "@/lib/zollhaus-tables";
 import { downloadPlaceCardsPdf, downloadPlaceCardsZip } from "@/lib/export-place-cards-pdf";
+import {
+  downloadTentCardsPdf,
+  downloadTentCardsZip,
+} from "@/lib/export-tent-cards-pdf";
 
 type TischeViewMode = "grid" | "floorplan" | "manual";
 
@@ -586,6 +590,8 @@ export function TischeTab({
   const [exportMsg, setExportMsg] = useState<string | null>(null);
   const [exportingPlaceCards, setExportingPlaceCards] = useState(false);
   const [exportingPlaceCardsZip, setExportingPlaceCardsZip] = useState(false);
+  const [exportingTentCards, setExportingTentCards] = useState(false);
+  const [exportingTentCardsZip, setExportingTentCardsZip] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const mountedRefreshRef = useRef(false);
   const [currentTables, setCurrentTables] = useState<AssignedTable[] | null>(null);
@@ -809,6 +815,40 @@ export function TischeTab({
       setExportingPlaceCardsZip(false);
     }
   }, [displayResult.tables]);
+
+  const handleTentCardsExport = useCallback(async () => {
+    setExportingTentCards(true);
+    try {
+      await downloadTentCardsPdf(displayResult.tables);
+      setExportMsg("Tischaufsteller als PDF heruntergeladen!");
+      setTimeout(() => setExportMsg(null), 2500);
+    } catch {
+      setExportMsg("Tischaufsteller-Export fehlgeschlagen.");
+      setTimeout(() => setExportMsg(null), 2500);
+    } finally {
+      setExportingTentCards(false);
+    }
+  }, [displayResult.tables]);
+
+  const handleTentCardsZipExport = useCallback(async () => {
+    setExportingTentCardsZip(true);
+    try {
+      await downloadTentCardsZip(displayResult.tables);
+      setExportMsg("Tischaufsteller als ZIP heruntergeladen!");
+      setTimeout(() => setExportMsg(null), 2500);
+    } catch {
+      setExportMsg("Tischaufsteller-ZIP-Export fehlgeschlagen.");
+      setTimeout(() => setExportMsg(null), 2500);
+    } finally {
+      setExportingTentCardsZip(false);
+    }
+  }, [displayResult.tables]);
+
+  const isExportingCards =
+    exportingPlaceCards ||
+    exportingPlaceCardsZip ||
+    exportingTentCards ||
+    exportingTentCardsZip;
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
@@ -1077,7 +1117,7 @@ export function TischeTab({
           <button
             type="button"
             onClick={handlePlaceCardsExport}
-            disabled={exportingPlaceCards || exportingPlaceCardsZip}
+            disabled={isExportingCards}
             className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
           >
             {exportingPlaceCards ? "Platzkarten…" : "Platzkarten exportieren"}
@@ -1085,10 +1125,26 @@ export function TischeTab({
           <button
             type="button"
             onClick={handlePlaceCardsZipExport}
-            disabled={exportingPlaceCards || exportingPlaceCardsZip}
+            disabled={isExportingCards}
             className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
           >
             {exportingPlaceCardsZip ? "ZIP…" : "Platzkarten als Bilder (ZIP)"}
+          </button>
+          <button
+            type="button"
+            onClick={handleTentCardsExport}
+            disabled={isExportingCards}
+            className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
+          >
+            {exportingTentCards ? "Aufsteller…" : "Tischaufsteller PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={handleTentCardsZipExport}
+            disabled={isExportingCards}
+            className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
+          >
+            {exportingTentCardsZip ? "ZIP…" : "Tischaufsteller als Bilder (ZIP)"}
           </button>
         </div>
       </div>

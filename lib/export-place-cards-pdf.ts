@@ -11,6 +11,7 @@ const GOLD = "#C9A227";
 const CREAM = "#f0ead6";
 const CREAM_MUTED = "#c8bfa8";
 const BG = "#0a0a0f";
+const BRAND_FOOTER_HTML = `Cabisino 2026 <span style="opacity:0.7">♠</span>`;
 
 export type PlaceCardData = {
   tableNumber: number;
@@ -19,7 +20,7 @@ export type PlaceCardData = {
   guestNames: string[];
 };
 
-function collectPlaceCards(tables: AssignedTable[]): PlaceCardData[] {
+export function collectPlaceCards(tables: AssignedTable[]): PlaceCardData[] {
   const cards: PlaceCardData[] = [];
 
   tables.forEach((table, tableIdx) => {
@@ -194,7 +195,7 @@ function createPlaceCardElement(
   footer.style.cssText = "text-align:center;width:100%;flex-shrink:0;margin-top:auto";
 
   const footerText = document.createElement("p");
-  footerText.innerHTML = `Cabisino 2026 <span style="opacity:0.7">♠</span>`;
+  footerText.innerHTML = BRAND_FOOTER_HTML;
   footerText.style.cssText = `margin:0;font-size:${footerSize}px;letter-spacing:0.14em;color:${CREAM_MUTED};font-family:'DM Sans',system-ui,sans-serif`;
 
   footer.append(footerText);
