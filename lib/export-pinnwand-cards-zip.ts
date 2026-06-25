@@ -176,7 +176,7 @@ function createFooter(widthPx: number, heightPx: number): HTMLDivElement {
   return footer;
 }
 
-function createQrCard(qrDataUrl: string): HTMLDivElement {
+function createQrCard(qrSvg: string): HTMLDivElement {
   const widthPx = PINNWAND_W_PX;
   const heightPx = PINNWAND_H_PX;
   const el = createBaseCard(widthPx, heightPx);
@@ -205,18 +205,33 @@ function createQrCard(qrDataUrl: string): HTMLDivElement {
   qrWrap.style.cssText =
     "display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;gap:18px";
 
-  const qrImg = document.createElement("img");
-  qrImg.src = qrDataUrl;
-  qrImg.alt = "QR-Code";
-  qrImg.style.cssText = [
-    `width:${Math.round(widthPx * 0.55)}px`,
-    "height:auto",
-    "image-rendering:crisp-edges",
-    "background:rgba(255,255,255,0.96)",
+  const qrBox = document.createElement("div");
+  const qrSize = Math.round(widthPx * 0.6);
+  qrBox.style.cssText = [
+    `width:${qrSize}px`,
+    `height:${qrSize}px`,
+    "display:flex",
+    "align-items:center",
+    "justify-content:center",
+    "background:#ffffff",
     `padding:${Math.round(widthPx * 0.02)}px`,
     `border-radius:${Math.round(widthPx * 0.02)}px`,
     `box-shadow:0 0 0 2px rgba(201,162,39,0.25)`,
   ].join(";");
+
+  const qrSvgWrap = document.createElement("div");
+  qrSvgWrap.innerHTML = qrSvg;
+  qrSvgWrap.style.cssText = `width:${qrSize}px;height:${qrSize}px`;
+  const svg = qrSvgWrap.querySelector("svg") as SVGElement | null;
+  if (svg) {
+    svg.setAttribute("width", String(qrSize));
+    svg.setAttribute("height", String(qrSize));
+    svg.setAttribute("viewBox", svg.getAttribute("viewBox") ?? `0 0 ${qrSize} ${qrSize}`);
+    svg.style.width = `${qrSize}px`;
+    svg.style.height = `${qrSize}px`;
+    svg.style.display = "block";
+  }
+  qrBox.appendChild(qrSvgWrap);
 
   const urlText = document.createElement("p");
   urlText.textContent = PINNWAND_URL;
@@ -224,7 +239,7 @@ function createQrCard(qrDataUrl: string): HTMLDivElement {
     heightPx * 0.014
   )}px;color:${CARD_GOLD};opacity:0.9;letter-spacing:0.06em;font-family:'DM Sans',system-ui,sans-serif;${SHARP_TEXT_STYLE}`;
 
-  qrWrap.append(qrImg, urlText);
+  qrWrap.append(qrBox, urlText);
 
   const footer = createFooter(widthPx, heightPx);
 
@@ -312,21 +327,6 @@ function createNameListCard(rows: PersonRow[], rangeLabel: string): HTMLDivEleme
 async function renderCardJpeg(el: HTMLDivElement, container: HTMLDivElement): Promise<string> {
   container.appendChild(el);
   try {
-    // Ensure embedded images (QR) are decoded before capture.
-    const imgs = Array.from(el.querySelectorAll("img"));
-    await Promise.all(
-      imgs.map((img) => {
-        const anyImg = img as HTMLImageElement;
-        if (typeof anyImg.decode === "function") {
-          return anyImg.decode().catch(() => {});
-        }
-        return new Promise<void>((resolve) => {
-          if (anyImg.complete) return resolve();
-          anyImg.onload = () => resolve();
-          anyImg.onerror = () => resolve();
-        });
-      })
-    );
     return await captureNodeJpeg(el, PINNWAND_W_PX, PINNWAND_H_PX);
   } finally {
     container.removeChild(el);
@@ -355,13 +355,31 @@ export async function downloadPinnwandCardsZip(): Promise<void> {
   ]);
 
   const people = collectPeople(json);
+  if (
+    !people.some(
+      (p) => `${p.first} ${p.last}`.trim().toLowerCase() === "frank wieligmann"
+    ) &&
+    !people.some(
+      (p) => `${p.first} ${p.last}`.trim().toLowerCase() === "frank willigmann"
+    ) &&
+    !people.some(
+      (p) => `${p.first} ${p.last}`.trim().toLowerCase() === "frank williegmann"
+    )
+  ) {
+    // This is a data issue: the pinnwand list only contains main entries from Supabase.
+    // Surface it so the admin knows they need to add/create an entry for Frank.
+    // (Do not hardcode him into the export.)
+    console.warn(
+      "[pinnwand] Frank Wieligmann not found in entries table; will not appear on name cards."
+    );
+  }
   const listCards = splitIntoCards(people, 38);
 
-  const qrDataUrl = await QRCode.toDataURL(PINNWAND_URL, {
-    width: 1000,
-    margin: 2,
+  const qrSvg = await QRCode.toString(PINNWAND_URL, {
+    type: "svg",
+    margin: 1,
     color: {
-      dark: "#C9A227",
+      dark: "#111827",
       light: "#ffffff",
     },
   });
@@ -372,7 +390,7 @@ export async function downloadPinnwandCardsZip(): Promise<void> {
 
   try {
     // Card 01 — QR
-    const qrEl = createQrCard(qrDataUrl);
+    const qrEl = createQrCard(qrSvg);
     const qrJpg = await renderCardJpeg(qrEl, container);
     const qrBase64 = qrJpg.split(",")[1];
     if (qrBase64) {
