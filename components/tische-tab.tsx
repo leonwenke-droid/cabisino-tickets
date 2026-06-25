@@ -46,6 +46,7 @@ import { ManualAssignView } from "@/components/manual-assign-view";
 import {
   ASSIGNABLE_TABLE_COUNT,
   BUFFER_TABLE_COUNT,
+  ZOLLHAUS_TABLE_NUMBERS,
   ZOLLHAUS_TABLE_COUNT,
   formatZollhausTableLabel,
   getBufferTableNumber,
@@ -58,6 +59,7 @@ import {
   downloadTentCardsPdf,
   downloadTentCardsZip,
 } from "@/lib/export-tent-cards-pdf";
+import { QRCodeSVG } from "qrcode.react";
 
 type TischeViewMode = "grid" | "floorplan" | "manual";
 
@@ -588,6 +590,8 @@ export function TischeTab({
 }) {
   const [recalcKey, setRecalcKey] = useState(0);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+  const [publishingPlan, setPublishingPlan] = useState(false);
+  const [showQrHelper, setShowQrHelper] = useState(false);
   const [exportingPlaceCards, setExportingPlaceCards] = useState(false);
   const [exportingPlaceCardsZip, setExportingPlaceCardsZip] = useState(false);
   const [exportingTentCards, setExportingTentCards] = useState(false);
@@ -787,6 +791,47 @@ export function TischeTab({
       setTimeout(() => setExportMsg(null), 2500);
     }
   }, [displayResult.tables]);
+
+  const handlePublishPlan = useCallback(async () => {
+    const tables = currentTables ?? baseResult.tables;
+    const assignment: Record<string, number> = {};
+    for (let tableIdx = 0; tableIdx < tables.length; tableIdx++) {
+      const tableNumber = ZOLLHAUS_TABLE_NUMBERS[tableIdx] ?? null;
+      if (!tableNumber) continue;
+      for (const entry of tables[tableIdx]?.entries ?? []) {
+        assignment[entry.id] = tableNumber;
+      }
+    }
+
+    setPublishingPlan(true);
+    try {
+      const res = await fetch("/api/publish-seating-plan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-token": sessionStorage.getItem("admin_auth_token") ?? "",
+        },
+        body: JSON.stringify({ assignment }),
+      });
+      const json = await res.json();
+      if (res.ok && json?.ok) {
+        const time = json?.published_at
+          ? new Date(String(json.published_at)).toLocaleTimeString("de-DE", {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          : null;
+        setExportMsg(time ? `Sitzplan veröffentlicht · ${time} Uhr` : "Sitzplan veröffentlicht!");
+      } else {
+        setExportMsg(json?.error ? `Veröffentlichen fehlgeschlagen: ${json.error}` : "Veröffentlichen fehlgeschlagen.");
+      }
+    } catch {
+      setExportMsg("Veröffentlichen fehlgeschlagen.");
+    } finally {
+      setPublishingPlan(false);
+      setTimeout(() => setExportMsg(null), 3500);
+    }
+  }, [currentTables, baseResult.tables]);
 
   const handlePlaceCardsExport = useCallback(async () => {
     setExportingPlaceCards(true);
@@ -1116,6 +1161,22 @@ export function TischeTab({
           </button>
           <button
             type="button"
+            onClick={handlePublishPlan}
+            disabled={publishingPlan}
+            className="py-2 px-4 rounded-xl border border-emerald-500/30 text-emerald-300 text-xs font-sans hover:bg-emerald-500/10 transition-all disabled:opacity-50 disabled:cursor-wait"
+            title="Schreibt die aktuelle Zuordnung nach Supabase, damit /finden sie lesen kann."
+          >
+            {publishingPlan ? "Veröffentlicht…" : "Sitzplan veröffentlichen"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowQrHelper((v) => !v)}
+            className="py-2 px-4 rounded-xl border border-gold/20 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
+          >
+            QR-Code /finden
+          </button>
+          <button
+            type="button"
             onClick={handlePlaceCardsExport}
             disabled={isExportingCards}
             className="py-2 px-4 rounded-xl border border-gold/30 text-gold text-xs font-sans font-medium hover:bg-gold/5 transition-all disabled:opacity-50 disabled:cursor-wait"
@@ -1148,6 +1209,64 @@ export function TischeTab({
           </button>
         </div>
       </div>
+
+      {showQrHelper && (
+        <div className="felt-card rounded-2xl px-4 py-4 border border-gold/25">
+          <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
+            <div className="flex items-center justify-center rounded-xl border border-gold/20 bg-surface-2 p-4 w-fit">
+              <QRCodeSVG
+                value="https://cabisino-tickets.vercel.app/finden"
+                size={180}
+                bgColor="transparent"
+                fgColor="#C9A227"
+                level="M"
+                includeMargin
+              />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-serif text-lg text-gold mb-1">QR-Code: Sitzplatz finden</h3>
+              <p className="text-cream-muted text-xs font-sans mb-3">
+                Link zum Ausdrucken und am Eingang aufhängen.
+              </p>
+              <div className="rounded-xl border border-gold/15 bg-black/20 px-3 py-2.5">
+                <p className="text-cream text-xs font-sans break-all">
+                  https://cabisino-tickets.vercel.app/finden
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigator.clipboard
+                      .writeText("https://cabisino-tickets.vercel.app/finden")
+                      .then(() => {
+                        setExportMsg("Link kopiert!");
+                        setTimeout(() => setExportMsg(null), 2000);
+                      })
+                      .catch(() => {
+                        setExportMsg("Kopieren fehlgeschlagen.");
+                        setTimeout(() => setExportMsg(null), 2000);
+                      })
+                  }
+                  className="py-2 px-4 rounded-xl border border-gold/25 text-gold text-xs font-sans hover:border-gold/50 hover:bg-gold/5 transition-all"
+                >
+                  Link kopieren
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="py-2 px-4 rounded-xl border border-gold/25 text-cream-muted text-xs font-sans hover:text-cream hover:border-gold/40 transition-all"
+                >
+                  Drucken
+                </button>
+              </div>
+              <p className="text-[11px] text-cream-muted/70 font-sans mt-3">
+                Hinweis: Nach jeder Tischplan-Änderung einmal auf <span className="text-emerald-300">„Sitzplan veröffentlichen“</span> drücken.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary bar */}
       <div>
