@@ -126,6 +126,30 @@ export default function AdminPage() {
     }
   };
 
+  const handleAddFrankWieligmann = useCallback(async () => {
+    const res = await fetch("/api/admin-create-entry", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-token": sessionStorage.getItem("admin_auth_token") ?? "",
+      },
+      body: JSON.stringify({
+        vorname: "Frank",
+        nachname: "Wieligmann",
+        guests: null,
+        isFree: true,
+      }),
+    });
+    const json = await res.json();
+    if (json?.success && json?.entry) {
+      setEntries((prev) => [json.entry as Entry, ...prev]);
+      setSearchQuery("");
+      return;
+    }
+    // fallback: refresh list so user sees what happened
+    await fetchEntries();
+  }, [fetchEntries]);
+
   const resetScanner = () => {
     setScanResult(null);
     lastScannedRef.current = null;
@@ -475,6 +499,15 @@ export default function AdminPage() {
               className="w-full py-2 rounded-xl border border-gold/20 text-gold text-xs font-sans hover:bg-gold/5 transition-all disabled:opacity-50"
             >
               {isLoadingList ? "Lädt…" : "↺ Aktualisieren"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleAddFrankWieligmann}
+              className="w-full py-2.5 rounded-xl border border-emerald-500/30 text-emerald-300 text-xs font-sans hover:bg-emerald-500/10 transition-all"
+              title="Fügt Frank Wieligmann als kostenlosen Eintrag hinzu."
+            >
+              + Frank Wieligmann hinzufügen
             </button>
 
             {/* Entries */}
