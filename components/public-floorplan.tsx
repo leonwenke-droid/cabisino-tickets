@@ -12,9 +12,9 @@ const OCTAGON_CLIP =
   "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)";
 
 const COLORS = {
-  dimFill: "rgba(255,255,255,0.03)",
-  dimStroke: "rgba(148,163,184,0.35)",
-  dimText: "rgba(148,163,184,0.55)",
+  dimFill: "rgba(255,255,255,0.06)",
+  dimStroke: "rgba(148,163,184,0.6)",
+  dimText: "rgba(203,213,225,0.85)",
   goldFill: "#C9A227",
   goldStroke: "#a07d15",
   goldText: "#111827",
@@ -29,7 +29,7 @@ function PlanPolygon({
   poly: TablePolygon;
   highlighted: boolean;
 }) {
-  const opacity = highlighted ? 1 : 0.18;
+  const opacity = highlighted ? 1 : 0.42;
   const fill = highlighted ? COLORS.goldFill : COLORS.dimFill;
   const stroke = highlighted ? COLORS.goldStroke : COLORS.dimStroke;
   const textFill = highlighted ? COLORS.goldText : COLORS.dimText;
@@ -155,7 +155,7 @@ export function PublicFloorplan({
                 minWidth: 48,
                 aspectRatio: "1",
                 clipPath: OCTAGON_CLIP,
-                opacity: tableNumber === highlightTableNumber ? 1 : 0.12,
+                opacity: tableNumber === highlightTableNumber ? 1 : 0.22,
                 boxShadow:
                   tableNumber === highlightTableNumber
                     ? "0 0 0 2px rgba(201,162,39,0.35)"
